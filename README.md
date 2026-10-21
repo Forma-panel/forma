@@ -97,4 +97,6 @@ npm run check
 
 ## 许可
 
-代码使用 [MIT 许可证](LICENSE)。随包的 Noto Sans SC 字体单独使用 SIL Open Font License，见 [app/assets/fonts/OFL.txt](app/assets/fonts/OFL.txt)，不随代码改成 MIT。
+代码使用 [PolyForm Noncommercial 1.0.0](LICENSE)。个人学习、研究、实验和业余项目可以使用、修改和再分发。公司拿去做成产品、销售、收费服务或其他商业用途不可以。
+
+随包的 Noto Sans SC 字体是 Google Fonts 的字体，仍使用 SIL Open Font License，见 [app/assets/fonts/OFL.txt](app/assets/fonts/OFL.txt)。这份字体许可允许商用，不能改成非商用。

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Local-first AI answer panel with a particle compiler",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node server.mjs",
