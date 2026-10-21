@@ -1,0 +1,13 @@
+{
+  "name": "forma-particle-panel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first AI answer panel with a particle compiler",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check app/compiler.js && node --check app/main.js && node --check app/scenes.js && node --check app/motion.js && node --check app/material-state.js && node --check app/material-plan.js && node --check app/particle-renderer.js && node --check app/liquid-shaders.js && node --check app/qa/liquid.js && node --check app/qa/verify.js && node --check server.mjs"
+  }
+}

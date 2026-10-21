@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f7f8f4">
+  <title>流形 Forma — 粒子回答面板</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button class="sidebar-scrim" id="sidebar-scrim" aria-label="收起导航" hidden></button>
+    <aside class="sidebar" id="sidebar" aria-label="面板导航">
+      <a class="brand" href="./" aria-label="流形 Forma 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>流形 <small>Forma</small></span><span class="version">1.0</span>
+      </a>
+      <button class="new-panel" id="new-panel"><span aria-hidden="true">＋</span> 新面板 <kbd>⌘ K</kbd></button>
+      <div class="nav-heading">探索表达 <span>EXPLORE</span></div>
+      <nav class="demo-list" aria-label="粒子示例">
+        <button class="demo-button" data-demo="text"><span class="nav-icon" aria-hidden="true">Aa</span><span>文字落板</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button class="demo-button" data-demo="chart"><span class="nav-icon chart-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>数据有形</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button class="demo-button" data-demo="orbit"><span class="nav-icon orbit-icon" aria-hidden="true">◎</span><span>轨道与运动</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button class="demo-button" data-demo="video"><span class="nav-icon" aria-hidden="true">▻</span><span>逐帧短片</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+      </nav>
+      <div class="history-heading"><div class="nav-heading">最近面板 <span>RECENT</span></div><button id="clear-history" class="quiet-icon" title="清空历史记录" aria-label="清空历史记录">⌫</button></div>
+      <div class="history-list" id="history-list"><p class="history-empty">你的下一次表达，从这里开始。</p></div>
+      <div class="sidebar-bottom">
+        <div class="file-tools"><button id="import-scene" title="导入场景 JSON">↥ 导入场景</button><button id="export-scene" title="导出当前场景 JSON">↧ 导出场景</button></div>
+        <div class="local-note"><span class="status-dot"></span><span>在这台设备上呈现</span><span class="local-symbol" aria-hidden="true">⌘</span></div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="board-heading"><button id="toggle-sidebar" class="icon-button mobile-toggle" aria-label="展开导航" aria-controls="sidebar" aria-expanded="false">☰</button><span class="workspace-label">工作台</span><span class="breadcrumb" aria-hidden="true">/</span><h1 id="panel-title">一块会回答的画布</h1></div>
+        <button id="connect-model" class="connection-button"><span class="connection-dot" id="connection-dot"></span><span id="connection-label">连接模型</span><span aria-hidden="true">↗</span></button>
+      </header>
+
+      <section class="panel-workspace" aria-label="粒子工作台">
+        <div class="board-toolbar">
+          <div class="panel-label"><span class="tiny-grid" aria-hidden="true">⠿</span><span>粒子面板</span><span class="beta-pill">LIVE</span></div>
+          <div class="display-tools">
+            <div class="segmented-control" role="group" aria-label="粒子显示样式"><button id="style-clear" class="active" aria-pressed="true">清晰</button><button id="style-grain" aria-pressed="false">颗粒</button></div>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <button id="disturbance" class="toolbar-toggle" aria-pressed="false" title="移动指针，扰动已经落板的粒子"><span aria-hidden="true">⌁</span><span>扰动</span></button>
+            <button id="reduced-motion" class="toolbar-toggle" aria-pressed="false" title="减少聚合与持续动画"><span aria-hidden="true">◴</span><span>减少运动</span></button>
+            <button id="copy-answer" class="icon-button" aria-label="复制面板文字" title="复制面板文字"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="2"/><path d="M12 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></svg></button>
+          </div>
+        </div>
+        <div class="particle-board" id="particle-board">
+          <canvas id="particle-canvas" tabindex="0" aria-label="粒子回答面板。可点击内容选择，滚动浏览长回答。" aria-describedby="board-accessibility"></canvas>
+          <div id="board-accessibility" class="visually-hidden" aria-live="polite" aria-atomic="false"></div>
+        </div>
+        <div class="board-footer"><div class="board-status"><span class="status-dot" id="board-status-dot"></span><span id="board-status" role="status">粒子正在就位</span></div><div class="board-metrics" id="board-metrics" aria-label="面板运行状态"><span id="particle-count">— 粒子</span><span class="metric-separator">·</span><span id="frame-count">— FPS</span><span class="metric-separator">·</span><span id="renderer-name">本地渲染</span></div></div>
+      </section>
+
+      <div class="composer-area">
+        <div class="suggestion-row" aria-label="试一试"><span>试一试</span><button data-prompt="用图表展示六个月的收入变化">把数据变成图表 <span>↗</span></button><button data-prompt="演示地月轨道运动">解释一种运动 <span>↗</span></button><button data-prompt="显示粒子文字示例">让文字落板 <span>↗</span></button></div>
+        <form class="composer" id="composer-form">
+          <div class="selection-chip" id="selection-chip" hidden><span class="selection-prefix">引用</span><span id="selection-text"></span><button type="button" id="clear-selection" aria-label="移除引用">×</button></div>
+          <label class="visually-hidden" for="prompt">描述你想看见的回答</label>
+          <textarea id="prompt" rows="2" maxlength="8000" placeholder="描述你想看见的回答…" spellcheck="false"></textarea>
+          <div class="composer-controls"><div class="composer-left"><button type="button" id="upload-media" class="icon-button" aria-label="添加本地图片或视频" title="添加本地图片或视频"><span class="attachment-icon" aria-hidden="true">＋</span></button><span class="composer-divider" aria-hidden="true"></span><span class="mode-dot" id="mode-dot"></span><span id="mode-label">本地示例模式</span></div><div class="composer-right"><span class="keyboard-hint">Enter 发送 · ⇧ Enter 换行</span><button type="button" id="stop-generation" class="stop-button" hidden><span aria-hidden="true">■</span> 停止</button><button type="submit" id="send-prompt" class="send-button" aria-label="发送"><span aria-hidden="true">↑</span></button></div></div>
+        </form>
+        <p class="composer-caption" id="composer-caption">每一种回答，都在同一块粒子板上发生。<span>当前为预设与本地规则示例，连接模型后可自由提问。</span></p>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="connection-dialog" class="connection-dialog" aria-labelledby="connection-title">
+    <form id="connection-form">
+      <div class="dialog-heading"><div><span class="eyebrow">YOUR MODEL, YOUR CANVAS</span><h2 id="connection-title">让你的 AI，拥有形状。</h2></div><button type="button" id="close-connection" class="icon-button" aria-label="关闭连接设置">×</button></div>
+      <p class="dialog-description">通过本地服务连接模型。密钥只保留在本机服务内存中，重启后需要重新填写。</p>
+      <label for="provider-kind">接口类型</label><select id="provider-kind"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic Messages</option></select>
+      <label for="provider-url">API 地址</label><input id="provider-url" type="url" placeholder="https://api.openai.com/v1" required autocomplete="off" spellcheck="false">
+      <label for="provider-model">模型名称</label><input id="provider-model" type="text" placeholder="填写服务商提供的模型 ID" required maxlength="200" autocomplete="off" spellcheck="false">
+      <label for="provider-key">API Key <span id="key-hint">仅用于这次本地服务会话</span></label><input id="provider-key" type="password" placeholder="粘贴 API Key" autocomplete="off" spellcheck="false">
+      <p id="connection-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-footer"><button type="button" id="disconnect-model" class="text-button">断开连接</button><button type="submit" class="primary-button" id="save-connection">保存连接</button></div>
+    </form>
+  </dialog>
+  <input type="file" id="scene-file" accept="application/json,.json" hidden>
+  <input type="file" id="media-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

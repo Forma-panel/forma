@@ -1,0 +1,748 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forma:scene-draft:0.3",
+  "title": "Forma ModelSceneDraft 0.3 — internal design contract",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "const": "panel-scene/0.3"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "group"
+              },
+              "direction": {
+                "enum": [
+                  "column",
+                  "row",
+                  "free"
+                ]
+              },
+              "gap": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "viewBox": {
+                "type": "object",
+                "properties": {
+                  "width": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 8192
+                  },
+                  "height": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 8192
+                  }
+                },
+                "required": [
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "direction"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "role": {
+                "enum": [
+                  "title",
+                  "body",
+                  "caption",
+                  "code"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "text",
+              "role"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "chart"
+              },
+              "datasetId": {
+                "$ref": "#/$defs/id"
+              },
+              "chartType": {
+                "enum": [
+                  "bar",
+                  "line"
+                ]
+              },
+              "xField": {
+                "$ref": "#/$defs/id"
+              },
+              "yField": {
+                "$ref": "#/$defs/id"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "zeroBaseline": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "datasetId",
+              "chartType",
+              "xField",
+              "yField",
+              "label",
+              "unit"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "shape"
+              },
+              "shape": {
+                "enum": [
+                  "circle",
+                  "rect",
+                  "line"
+                ]
+              },
+              "material": {
+                "enum": [
+                  "primary",
+                  "accent",
+                  "muted",
+                  "positive",
+                  "negative"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "shape",
+              "material",
+              "label"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "image"
+              },
+              "assetId": {
+                "$ref": "#/$defs/id"
+              },
+              "alt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "fit": {
+                "enum": [
+                  "contain",
+                  "cover"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "assetId",
+              "alt",
+              "fit"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "parentId": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "layout": {
+                "$ref": "#/$defs/layout"
+              },
+              "sourceRefs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "kind": {
+                "const": "video"
+              },
+              "assetId": {
+                "$ref": "#/$defs/id"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "posterAssetId": {
+                "$ref": "#/$defs/id"
+              },
+              "captionsAssetId": {
+                "$ref": "#/$defs/id"
+              },
+              "fit": {
+                "enum": [
+                  "contain",
+                  "cover"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "parentId",
+              "layout",
+              "kind",
+              "assetId",
+              "label",
+              "fit"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dataset"
+      },
+      "minItems": 0,
+      "maxItems": 16
+    },
+    "animations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/animation"
+      },
+      "minItems": 0,
+      "maxItems": 32
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "minItems": 0,
+      "maxItems": 64
+    }
+  },
+  "required": [
+    "protocol",
+    "summary",
+    "nodes",
+    "datasets",
+    "animations",
+    "actions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "layout": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "flow"
+            },
+            "width": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "fill",
+                    "fit"
+                  ]
+                },
+                {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 8192
+                }
+              ]
+            },
+            "height": {
+              "oneOf": [
+                {
+                  "const": "auto"
+                },
+                {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 8192
+                }
+              ]
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "absolute"
+            },
+            "x": {
+              "type": "number",
+              "minimum": -8192,
+              "maximum": 8192
+            },
+            "y": {
+              "type": "number",
+              "minimum": -8192,
+              "maximum": 8192
+            },
+            "width": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 8192
+            },
+            "height": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 8192
+            }
+          },
+          "required": [
+            "mode",
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "dataset": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/id"
+              },
+              "type": {
+                "enum": [
+                  "string",
+                  "number"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "$ref": "#/$defs/id"
+              },
+              "values": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 32,
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                },
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "key",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 2000
+        }
+      },
+      "required": [
+        "id",
+        "fields",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "animation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "property": {
+          "enum": [
+            "rotate",
+            "translateX",
+            "translateY",
+            "opacity"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "repeat": {
+          "enum": [
+            "once",
+            "loop"
+          ]
+        },
+        "keyframes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timeMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 60000
+              },
+              "value": {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "required": [
+              "timeMs",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 2,
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "property",
+        "durationMs",
+        "repeat",
+        "keyframes"
+      ],
+      "additionalProperties": false
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "ask-selection"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "id",
+            "target",
+            "kind",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "set-chart-type"
+            },
+            "chartType": {
+              "enum": [
+                "bar",
+                "line"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "id",
+            "target",
+            "kind",
+            "chartType",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "target": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "toggle-playback"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "id",
+            "target",
+            "kind",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
+

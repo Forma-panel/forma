@@ -1,0 +1,31 @@
+{
+  "protocol": "panel-scene/0.3",
+  "summary": "一段中文及可复制的混合文本",
+  "nodes": [
+    {
+      "id": "answer",
+      "parentId": null,
+      "kind": "group",
+      "direction": "column",
+      "gap": 16,
+      "layout": {
+        "mode": "flow",
+        "width": "fill"
+      }
+    },
+    {
+      "id": "intro",
+      "parentId": "answer",
+      "kind": "text",
+      "layout": {
+        "mode": "flow"
+      },
+      "role": "body",
+      "text": "粒子落板就是最终画面。收入增长 12.5%，Café 与中文均保留真实文本。"
+    }
+  ],
+  "datasets": [],
+  "animations": [],
+  "actions": []
+}
+

@@ -1,0 +1,108 @@
+{
+  "protocol": "panel-scene/0.3",
+  "transactionId": "txnExample1",
+  "branchId": "branchMain",
+  "answerId": "answerFirst",
+  "mode": "append",
+  "requestId": "requestExample1",
+  "baseRevision": 0,
+  "nextRevision": 1,
+  "origin": "agent",
+  "draft": {
+    "protocol": "panel-scene/0.3",
+    "summary": "演示数据：三年收入；单位万元",
+    "nodes": [
+      {
+        "id": "answer",
+        "parentId": null,
+        "kind": "group",
+        "direction": "column",
+        "gap": 16,
+        "layout": {
+          "mode": "flow",
+          "width": "fill"
+        }
+      },
+      {
+        "id": "title",
+        "parentId": "answer",
+        "kind": "text",
+        "role": "title",
+        "text": "三年收入变化（演示数据）",
+        "layout": {
+          "mode": "flow"
+        }
+      },
+      {
+        "id": "revenue",
+        "parentId": "answer",
+        "kind": "chart",
+        "layout": {
+          "mode": "flow",
+          "height": 280
+        },
+        "datasetId": "revenueData",
+        "chartType": "bar",
+        "xField": "year",
+        "yField": "income",
+        "unit": "万元",
+        "label": "三年收入",
+        "zeroBaseline": true
+      }
+    ],
+    "datasets": [
+      {
+        "id": "revenueData",
+        "fields": [
+          {
+            "name": "year",
+            "type": "string"
+          },
+          {
+            "name": "income",
+            "type": "number"
+          }
+        ],
+        "rows": [
+          {
+            "key": "year2023",
+            "values": {
+              "year": "2023",
+              "income": 120
+            }
+          },
+          {
+            "key": "year2024",
+            "values": {
+              "year": "2024",
+              "income": 150
+            }
+          },
+          {
+            "key": "year2025",
+            "values": {
+              "year": "2025",
+              "income": 180
+            }
+          }
+        ]
+      }
+    ],
+    "animations": [],
+    "actions": [
+      {
+        "id": "toLine",
+        "target": "revenue",
+        "kind": "set-chart-type",
+        "chartType": "line",
+        "label": "切换折线图"
+      },
+      {
+        "id": "askRevenue",
+        "target": "revenue",
+        "kind": "ask-selection",
+        "label": "解释变化"
+      }
+    ]
+  }
+}

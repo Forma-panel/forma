@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-09",
+  "browser": "Codex Chromium 155 / WebGL2 / DPR 2",
+  "unrecordedReplay": {
+    "rafFps": 59.4,
+    "p95FrameIntervalMs": 33.6
+  },
+  "recording": {
+    "transitionFps": 25.73,
+    "p95FrameIntervalMs": 62.0
+  },
+  "note": "一次本机观测；RAF 回调计时不是 GPU 呈现时间戳或跨设备性能保证；录制有额外开销。"
+}

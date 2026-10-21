@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forma 一页两个面板</title>
+<style>
+body{margin:0;background:#f6f7f9;color:#141821;font-family:-apple-system,"PingFang SC",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:40px 16px 120px}
+h1{font-size:28px;margin:0 0 8px} p{color:#5d6677;line-height:1.7}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(580px,1fr));gap:24px;margin:24px 0}
+.panel{background:#fff;border-radius:20px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.stage{height:600px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;padding:12px}
+.bar button{background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+.state{margin-left:auto;color:#8a93a3;font:12px ui-monospace,Menlo,monospace;align-self:center}
+.spacer{height:900px;display:grid;place-items:center;color:#8a93a3}
+</style>
+</head>
+<body>
+<main>
+  <h1>一页两个面板</h1>
+  <p>两个 Forma 实例各自独立：各有各的液团、成形和变换。鼠标只影响它所在的那一块。“销毁再创建”用来检查资源能否完全释放。</p>
+  <div class="row" id="row"></div>
+  <div class="spacer">往下滚动，面板离开视口</div>
+</main>
+<script type="module">
+import { createForma } from '../src/index.js';
+import { CONTENTS } from './contents.js';
+
+function panel(order) {
+  const el = document.createElement('div'); el.className = 'panel';
+  el.innerHTML = `<div class="stage"></div><div class="bar"></div>`;
+  document.getElementById('row').appendChild(el);
+  const stage = el.querySelector('.stage'), bar = el.querySelector('.bar');
+  const state = document.createElement('span'); state.className = 'state';
+  let forma, i = 0;
+  const make = () => {
+    forma = createForma(stage);
+    forma.on('state', s => state.textContent = s);
+    order.forEach(k => forma.preload(CONTENTS[k]));
+  };
+  make();
+  const btn = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.onclick = fn; bar.appendChild(b); };
+  btn('下一张', () => forma.show(CONTENTS[order[i++ % order.length]]));
+  btn('收回', () => forma.retract());
+  btn('销毁再创建', () => { forma.destroy(); stage.innerHTML = ''; make(); state.textContent = '已重新创建'; });
+  bar.appendChild(state);
+  setTimeout(() => forma.show(CONTENTS[order[i++]]), 800);
+}
+panel([0, 3, 5]);
+panel([1, 4, 2]);
+</script>
+</body>
+</html>

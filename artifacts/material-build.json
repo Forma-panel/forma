@@ -1,0 +1,13 @@
+{
+  "builtAt": "2026-10-09T13:12:27.405553+00:00",
+  "tests": 45,
+  "gpuChecks": 16,
+  "files": {
+    "app/compiler.js": "196180a7d40bc623ced68987539c6452d3618ea7356c3936787a8afe136efb1f",
+    "app/material-plan.js": "e3a05e78bfa30c7589944f686ac72ea3f31b4d39520d8eed4f4baefbadfcebcf",
+    "app/material-state.js": "aea3e82f1a1719c7373b57f2cfed9f3a5a0c415f41832fb39c07c62f99ea5549",
+    "app/particle-renderer.js": "5536ffd25154552e50841f45811a192d8ed369e81c2d8a532354171eeca23b82",
+    "app/liquid-shaders.js": "35f3acf4662ff4080d128914cea83b248cc79e9c388e9b18eb9506c490a6b831",
+    "app/qa/verify.js": "8cc587b248a808057f86bcc51feef64aa03bcb0204801433c57401af1fa28468"
+  }
+}

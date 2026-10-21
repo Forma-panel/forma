@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Forma 1.0 · 真实 GPU 验收</title>
+  <link rel="stylesheet" href="./verify.css">
+  <script type="module" src="./verify.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">FORMA / BROWSER GPU VERIFICATION</p>
+      <h1>粒子编译器 · 可复现验收</h1>
+      <p>下列结果由真实 WebGL 2 绘制、GPU 像素回读、编译器状态与视频解码共同决定。页面不会把未运行的检查记为通过。</p>
+      <div class="toolbar"><button id="run" type="button">重新运行全部验收</button><strong id="summary" aria-live="polite">等待运行</strong></div>
+      <p id="environment"></p>
+    </header>
+    <ol id="results" aria-live="polite"></ol>
+    <details open>
+      <summary>实际测试画布</summary>
+      <p>小画布用于逐粒子与分层断言；大画布用于完整编译器、排版和视频验收。测试结束后资源会释放。</p>
+      <div class="canvas-scroll"><canvas id="renderer-canvas" width="240" height="180" aria-label="直接 GPU 粒子测试画布"></canvas></div>
+      <div class="canvas-scroll"><div id="compiler-host" class="wide"><canvas id="compiler-canvas" aria-label="编译器验收画布"></canvas></div></div>
+    </details>
+    <pre id="details" aria-label="验收诊断"></pre>
+    <a href="/">返回流形面板</a>
+  </main>
+</body>
+</html>

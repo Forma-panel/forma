@@ -1,0 +1,18 @@
+{
+  "assets": {
+    "localImage": {
+      "kind": "image",
+      "ready": true
+    },
+    "localClip": {
+      "kind": "video",
+      "ready": true
+    },
+    "localCaptions": {
+      "kind": "captions",
+      "ready": true
+    }
+  },
+  "sources": {}
+}
+

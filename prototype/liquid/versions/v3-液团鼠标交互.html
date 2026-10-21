@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forma 液体成像原型</title>
+<style>
+html,body{margin:0;height:100%;background:#f6f7f9;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+#text{position:fixed;left:0;top:0;width:0;height:0;z-index:1;visibility:hidden}
+#text span{position:absolute;color:transparent;white-space:pre;cursor:text;transform-origin:0 0}
+#text span::selection{background:rgba(64,120,255,.28);color:transparent}
+#ui{position:fixed;left:16px;top:16px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;user-select:none}
+#ui button{background:rgba(0,0,0,.04);color:#2a2f3a;border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+#ui button:hover{background:rgba(0,0,0,.08)}
+#fps{position:fixed;right:16px;top:16px;color:#8a93a3;font:12px ui-monospace,Menlo,monospace;z-index:2;user-select:none}
+#err{position:fixed;inset:auto 16px 16px 16px;color:#d33;font:13px ui-monospace,Menlo,monospace;white-space:pre-wrap;z-index:3}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="text"></div>
+<div id="ui">
+  <button data-p="0">天气卡片</button>
+  <button data-p="1">数据面板</button>
+  <button data-p="2">文章</button>
+  <button id="back">收回成液团</button>
+</div>
+<div id="fps"></div>
+<div id="err"></div>
+<script>
+'use strict';
+const errBox = document.getElementById('err');
+function fail(msg) { errBox.textContent = msg; throw new Error(msg); }
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) fail('浏览器不支持 WebGL2');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('显卡不支持浮点渲染目标 (EXT_color_buffer_float)');
+
+// ---------- shaders ----------
+const FS_TRI = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); vUv = p; gl_Position = vec4(p*2.-1.,0.,1.); }`;
+
+// 每一滴液体的位置完全在显卡里算：
+// 它在 3D 液团里的位置 -> 所属“一束”液流的弯曲路径 -> 画面上的落点（直接读画面贴图的那个像素）。
+const SPLAT_VS = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uContent;
+uniform vec4 uCard;              // 画面在屏幕上的 x, y, 宽, 高（宽 = 0 表示没有画面）
+uniform vec3 uBlob, uPool;       // 液团 / 剩余液团：中心 xy，半径
+uniform vec2 uMouse, uMVel, uRes;
+uniform float uN, uT, uMode, uTime, uDpr, uHwBlob, uHwCard, uCell, uDown, uFrom;
+out vec3 vCol; out float vSig; out float vSize; out float vHw;
+
+uint pcg(uint v){ uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
+float hu(uint v){ return float(pcg(v)) * (1. / 4294967296.); }
+float hg(ivec2 p){ return hu(pcg(uint(p.x + 8192)) + uint(p.y + 8192)); }
+float vn(vec2 x){
+  vec2 i = floor(x), f = fract(x), u = f*f*(3.-2.*f); ivec2 I = ivec2(i);
+  return mix(mix(hg(I), hg(I+ivec2(1,0)), u.x), mix(hg(I+ivec2(0,1)), hg(I+ivec2(1,1)), u.x), u.y);
+}
+float easeIO(float s){ return s<.5 ? 4.*s*s*s : 1.-pow(-2.*s+2.,3.)*.5; }
+vec2 bez(vec2 a, vec2 b, vec2 c, float t){ return mix(mix(a,b,t), mix(b,c,t), t); }
+
+// 正方形 (u,v) + 深度 w -> 单位球内一点。投影到屏幕上的厚度正好是球的厚度，所以看起来是立体的。
+vec3 ballPoint(vec2 uv, float w){
+  vec2 a = uv * 2. - 1.;
+  float r, phi;
+  if (abs(a.x) < 1e-6 && abs(a.y) < 1e-6) return vec3(0., 0., 1. - 2.*w);
+  if (abs(a.x) > abs(a.y)) { r = a.x; phi = .7853982 * (a.y / a.x); }
+  else { r = a.y; phi = 1.5707963 - .7853982 * (a.x / a.y); }
+  float rr = sqrt(max(1. - pow(max(1. - r*r, 0.), 2./3.), 0.));
+  vec2 xy = sign(r) * rr * vec2(cos(phi), sin(phi));
+  float zm = sqrt(max(1. - rr*rr, 0.));
+  return vec3(xy, zm * (1. - 2.*w));
+}
+
+// 液团的自然形变：起伏的瓣、缓慢翻转、挤压回弹、靠近鼠标的一侧被吸出来（像铁磁流体）
+vec2 blobPos(vec3 b, vec3 B, float t, float seed){
+  // 只在屏幕平面内做平滑形变（不把深度搅进来），液滴分布保持均匀，液面才会光滑
+  float ang = atan(b.y, b.x), rad = length(b.xy);
+  float lob = sin(ang*2. + t*1.15 + seed) * .55 + sin(ang*3. - t*.9 + 1.3 + seed) * .35 + sin(ang*5. + t*1.7) * .12;
+  b.xy *= 1. + .08 * lob * smoothstep(0., .6, rad);
+  float spin = .25 * sin(t*.31 + seed);
+  b.xy = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * b.xy;
+  float sq = .05*sin(t*1.6 + seed);
+  b.x *= 1. + sq; b.y *= 1. - sq;
+  vec2 p = B.xy + b.xy * B.z;
+  vec2 tm = uMouse - B.xy; float dm = length(tm);
+  vec2 dirm = tm / max(dm, 1.);
+  float rl = length(b.xy);
+  float facing = max(dot(b.xy / max(rl, 1e-4), dirm), 0.);
+  float near = exp(-max(dm - B.z, 0.) / (B.z * .6)) * smoothstep(0., B.z * .5, dm) * (1. - uDown);
+  p += dirm * B.z * .3 * pow(facing, 6.) * rl * rl * near;
+  return p;
+}
+
+void main(){
+  uint id = uint(gl_VertexID);
+  float hA = hu(id*3u + 1u), hB = hu(id*3u + 2u), hC = hu(id*3u + 7u);
+  float cw = uCard.z, ch = uCard.w;
+  bool hasCard = cw > 0.;
+  float Mc = hasCard ? cw * ch : 0.;
+  float frac = Mc / uN;
+  float fid = float(gl_VertexID);
+
+  bool isCard = false;
+  vec3 home3, bhome3, tcol = vec3(.015, .016, .02);
+  vec2 tgt, btgt, poolUV, poolBUV;
+  float delay, dur, bend;
+
+  if (fid < Mc) {
+    int x = gl_VertexID % int(cw), y = gl_VertexID / int(cw);
+    vec4 c = texelFetch(uContent, ivec2(x, y), 0);
+    vec2 pc = vec2(x, y), sz = vec2(cw, ch);
+    vec2 uv = (pc + .5) / sz;
+    home3 = ballPoint(uv, frac * hA);
+    float cell = uCell;
+    vec2 nq = pc / (50. * uDpr);
+    float by = floor((pc.y + (vn(nq + 40.) - .5) * cell * .9) / cell);
+    float shift = mod(by, 2.) * .5 * cell;
+    float bx = floor((pc.x + shift + (vn(nq + vec2(20., 0.)) - .5) * cell * .9) / cell);
+    vec2 bc = clamp(vec2((bx + .5) * cell - shift, (by + .5) * cell), vec2(0.), sz - 1.);
+    bhome3 = ballPoint(bc / sz, frac * .5);
+    ivec2 bi = ivec2(bx, by);
+    delay = .03 + .34 * (.55 * bc.y / ch + .45 * hg(bi + 11)) + .16 * hB;
+    dur = .72 + .2 * hg(bi + 37);
+    bend = (vn(vec2(bi) * .35 + 5.3) - .5) * 1.4;
+    poolUV = uv; poolBUV = bc / sz;
+    if (c.a > .5) {
+      isCard = true; tcol = c.rgb;
+      tgt = uCard.xy + pc + .5;
+      btgt = uCard.xy + bc;
+    }
+  } else {
+    float j = fid - Mc, P = uN - Mc;
+    float cols = ceil(sqrt(P)), rows = ceil(P / cols);
+    vec2 uv = vec2(mod(j, cols) + .5 + (hC - .5) * .3, floor(j / cols) + .5) / vec2(cols, rows);
+    home3 = ballPoint(uv, frac + (1. - frac) * hA);
+    vec2 bq = (floor(uv * vec2(10., 3.)) + .5) / vec2(10., 3.);
+    bhome3 = ballPoint(bq, frac + (1. - frac) * .5);
+    ivec2 bi = ivec2(floor(uv * vec2(10., 3.)));
+    delay = .06 + .28 * bq.y + .1 * hg(bi + 3) + .12 * hB;
+    dur = .75 + .2 * hg(bi + 9);
+    bend = (hg(bi + 21) - .5) * 1.2;
+    poolUV = uv; poolBUV = bq;
+  }
+  if (!isCard) {                                   // 剩下的液体去另一个小液团
+    tgt = blobPos(ballPoint(poolUV, hA), uPool, uTime, 2.);
+    btgt = blobPos(ballPoint(poolBUV, .5), uPool, uTime, 2.);
+  }
+
+  vec2 h = blobPos(home3, uBlob, uTime, 0.);
+  vec2 hb = blobPos(bhome3, uBlob, uTime, 0.);
+
+  float s = 0.;
+  if (uMode > .5) s = clamp((uT - delay) / dur, 0., 1.);
+  else if (uMode < -.5) { float d = (.55 - delay) * .7; s = min(clamp((uFrom - delay) / dur, 0., 1.), 1. - clamp((uT - d) / dur, 0., 1.)); }
+  float e = easeIO(s);
+  float bump = 4. * s * (1. - s);
+
+  vec2 dv = btgt - hb; float L = length(dv) + 1e-3; vec2 dir = dv / L; vec2 perp = vec2(-dir.y, dir.x);
+  vec2 c1 = mix(hb, btgt, .5) + perp * bend * L * .6 + vec2(0., -.2 * L);
+  vec2 center = bez(hb, c1, btgt, e);
+  vec2 q = center / uDpr * .006;
+  center += vec2(sin(q.y*3.1 + uTime*1.3), cos(q.x*2.7 - uTime*1.1)) * 24. * uDpr * bump;
+  vec2 off = mix(h - hb, tgt - btgt, e) * (1. - .7 * smoothstep(0., .7, bump));
+  if (hC < .12) off += (vec2(hA, hB) - .5) * 26. * uDpr * bump;      // 细碎飞沫
+  vec2 p = center + off;
+
+  float settle = 0.;
+  if (uMode > .5) {
+    float a = uT - delay - dur;
+    if (a > 0.) { p += dir * sin(a*16.) * exp(-a*7.) * 2.5 * uDpr; settle = smoothstep(.45, .7, a); }
+  }
+  vec2 hd = vec2(0.);
+  if (isCard && uMode > .5 && s >= 1.) {           // 鼠标掠过：液面被拨动，停下后弹回
+    vec2 dm = p - uMouse; float r2 = dot(dm, dm); float rad = 46. * uDpr;
+    float hov = exp(-r2 / (2.*rad*rad)) * (1. - uDown);
+    hd = (uMVel * .5 + dm * inversesqrt(r2 + 1.) * length(uMVel) * .25) * hov;
+    p += hd;
+  }
+
+  vec3 ink = vec3(.015, .016, .02);
+  vec3 col = mix(ink, tcol, smoothstep(.3, .8, s));
+  vec3 iri = .5 + .5 * cos(6.2832 * (s*.7 + hA*.15 + vec3(0., .33, .67)));
+  col = mix(col, iri * .3, .15 * bump * (isCard ? 1. : .5));
+  vCol = col;
+  vHw = mix(uHwBlob, isCard ? uHwCard : uHwBlob, e);
+
+  float restSig = isCard ? mix(.95, .6, s) : .95;
+  float sig = mix(restSig, 1.15, bump);
+  bool exact = isCard && settle >= 1. && dot(hd, hd) < .0025;  // 落定：一滴液体正好占一个屏幕像素
+  if (exact) p = tgt;
+  vSig = sig; vSize = exact ? 1. : ceil(sig * 6.);
+  gl_PointSize = vSize;
+  vec2 ndc = p / uRes * 2. - 1.;
+  gl_Position = vec4(ndc.x, -ndc.y, 0., 1.);
+}`;
+
+const SPLAT_FS = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vSig; in float vSize; in float vHw;
+out vec4 o;
+void main(){
+  if (vSize < 1.5) { o = vec4(vCol * vHw, vHw); return; }
+  vec2 d = (gl_PointCoord - .5) * vSize;
+  float w = exp(-dot(d,d) / (2.*vSig*vSig)) / (6.2832*vSig*vSig) * vHw;
+  o = vec4(vCol * w, w);
+}`;
+
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex; uniform vec2 uDir; uniform vec4 uMask;
+in vec2 vUv; out vec4 o;
+void main(){
+  float w[5] = float[](.227027, .1945946, .1216216, .054054, .016216);
+  float s = dot(texture(uTex, vUv), uMask) * w[0];
+  for (int i = 1; i < 5; i++) {
+    s += dot(texture(uTex, vUv + uDir*float(i)), uMask) * w[i];
+    s += dot(texture(uTex, vUv - uDir*float(i)), uMask) * w[i];
+  }
+  o = vec4(s);
+}`;
+
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uD, uH;
+uniform vec2 uRes;
+uniform float uTime, uSweep, uMove, uDpr, uHwCard;
+uniform vec4 uRip[12];
+in vec2 vUv; out vec4 o;
+
+vec3 env(vec3 r){                       // 白色摄影棚 + 深色地面
+  vec3 c = mix(vec3(.10,.105,.115), vec3(.97,.975,.985), smoothstep(-.35, .45, r.y));
+  vec2 a = r.xy - vec2(-.42, .55);
+  c += vec3(1.) * 7. * smoothstep(.22, .12, max(abs(a.x)*.8, abs(a.y)*1.6));     // 主柔光箱（比环境亮得多）
+  c += vec3(.85,.9,1.) * 4. * smoothstep(.05, 0., abs(r.x - .66)) * smoothstep(.85, .15, abs(r.y));
+  c += vec3(1.,.97,.92) * 2.5 * smoothstep(.12, .04, length(r.xy - vec2(.45, -.35)));
+  return c;
+}
+
+void main(){
+  vec2 px = 1. / uRes;
+  vec3 bg = mix(vec3(.935,.94,.95), vec3(.985,.988,.992), vUv.y);
+  float s1 = textureLod(uH, vUv + vec2(0., 6. * uDpr * px.y), 0.).r;
+  float s2 = textureLod(uH, vUv + vec2(0., 22. * uDpr * px.y), 0.).r;
+  bg *= 1. - .08 * smoothstep(0., uHwCard, s1) - .16 * smoothstep(4., 80., s2);
+  if (textureLod(uH, vUv, 0.).r < 1e-3) { o = vec4(bg, 1.); return; }   // 纯背景，不用算液体
+  vec2 fp = vUv * uRes;
+  vec2 rg = vec2(0.);                   // 鼠标掠过留下的涟漪
+  for (int k = 0; k < 12; k++) {
+    vec4 R = uRip[k]; if (R.w <= 0.) continue;
+    vec2 d = fp - R.xy; float r = length(d) + 1e-3;
+    float x = r - R.z * 300. * uDpr;
+    float sw = 16. * uDpr;
+    float amp = exp(-x*x / (2.*sw*sw)) * exp(-R.z * 2.4) * R.w;
+    rg += d / r * cos(x / (6. * uDpr)) * amp;
+  }
+  vec2 uv = vUv + rg * 2.5 * uDpr * px;  // 折射：涟漪经过时画面跟着晃
+
+  vec4 D = texture(uD, uv);
+  float a = D.a;
+  vec3 base = D.rgb / max(a, 1e-4);
+  float Hc = texture(uH, uv).r;
+  vec2 e = px * 2. * uDpr;
+  vec2 g = vec2(texture(uH, uv + vec2(e.x,0.)).r - texture(uH, uv - vec2(e.x,0.)).r,
+                texture(uH, uv + vec2(0.,e.y)).r - texture(uH, uv - vec2(0.,e.y)).r) / (4. * uDpr);
+  vec2 ga = vec2(texture(uD, uv + vec2(px.x,0.)).a - texture(uD, uv - vec2(px.x,0.)).a,
+                 texture(uD, uv + vec2(0.,px.y)).a - texture(uD, uv - vec2(0.,px.y)).a) * .5;
+  g += clamp(ga * .25, -.6, .6) * (1. - smoothstep(2., 10., Hc));
+
+  float th = smoothstep(5., 30., Hc);    // 厚液体（液团、液流）
+  vec2 sp = fp / uDpr;
+  vec2 amb = cos(dot(sp, vec2(.031,.018)) + uTime*1.1) * vec2(.031,.018)
+           + cos(dot(sp, vec2(-.022,.035)) + uTime*.8) * vec2(-.022,.035)
+           + cos(dot(sp, vec2(.05,-.041)) - uTime*1.5) * vec2(.05,-.041) * .6;
+  g += amb * (2.5 * th + 1.5 * uMove) + rg * .5;
+
+  vec3 n = normalize(vec3(-g, 1.));
+  vec3 r = reflect(vec3(0.,0.,-1.), n);
+  r.xy += (vUv - .5) * vec2(.5, .4);
+  r = normalize(r);
+  float rip = min(length(rg), 1.);
+  float F0 = .05 * th + .05 * rip;
+  float F = F0 + (1. - F0) * pow(1. - n.z, 5.);
+  vec3 L = normalize(vec3(-.4, .6, 1.));
+  float diff = mix(1., .82 + .18 * max(dot(n, L), 0.), th);
+  vec3 liq = base * diff * (1. - F) + env(r) * F;
+  liq += pow(max(dot(r, normalize(vec3(-.35,.5,1.))), 0.), 220.) * (.15 + .85 * th + .5 * rip);
+  liq += smoothstep(.05, 0., abs(vUv.x + vUv.y*.35 - uSweep)) * vec3(.08) * (1. - th);
+
+  float m = smoothstep(.35 * uHwCard, .8 * uHwCard, a);
+  o = vec4(min(mix(bg, liq, m), vec3(1.)), 1.);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const pSplat = program(SPLAT_VS, SPLAT_FS);
+const pBlur = program(FS_TRI, BLUR_FS);
+const pComp = program(FS_TRI, COMP_FS);
+const vao = gl.createVertexArray();      // 没有顶点数据：每滴液体只靠编号在显卡里算
+
+// ---------- content texture ----------
+const contentTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, contentTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+// ---------- render targets ----------
+let W = 0, H = 0, DPR = 1, N = 1 << 20, splat, hA, hB;
+function makeTarget(w, h, ifmt = gl.RGBA16F, fmt = gl.RGBA) {
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, fmt, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+function freeTarget(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+
+// ---------- content (what the AI wants to show) ----------
+const FONT = '-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif';
+const INK = '#141821', SUB = '#5d6677', FAINT = '#8a93a3';
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function cardBg(ctx, w, h) {
+  const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#eef1f5');
+  rr(ctx, 0, 0, w, h, 24); ctx.fillStyle = g; ctx.fill();
+}
+function wrap(ctx, text, x, y, maxW, lh) {
+  let line = '';
+  for (const ch of text) {
+    if (ctx.measureText(line + ch).width > maxW) { ctx.fillText(line, x, y); y += lh; line = ch; } else line += ch;
+  }
+  if (line) ctx.fillText(line, x, y);
+  return y + lh;
+}
+const CONTENTS = [
+  function weather(ctx, w, h) {
+    cardBg(ctx, w, h);
+    const ph = h * .5;
+    ctx.save(); rr(ctx, 16, 16, w - 32, ph, 16); ctx.clip();
+    const sky = ctx.createLinearGradient(0, 16, 0, 16 + ph);
+    sky.addColorStop(0, '#2b1055'); sky.addColorStop(.55, '#d53369'); sky.addColorStop(1, '#ff9a44');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+    const sx = w * .68, sy = 16 + ph * .55;
+    const glow = ctx.createRadialGradient(sx, sy, 10, sx, sy, 120); glow.addColorStop(0, 'rgba(255,224,138,.85)'); glow.addColorStop(1, 'rgba(255,224,138,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(sx, sy, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a1f5c'; ctx.beginPath(); ctx.moveTo(0, 16 + ph);
+    for (let x = 0; x <= w; x += 40) ctx.lineTo(x, 16 + ph * (.66 + .16 * Math.sin(x * .013) + .07 * Math.sin(x * .041)));
+    ctx.lineTo(w, 16 + ph); ctx.fill();
+    ctx.fillStyle = '#1c0e2b'; ctx.beginPath(); ctx.moveTo(0, 16 + ph);
+    for (let x = 0; x <= w; x += 30) ctx.lineTo(x, 16 + ph * (.82 + .09 * Math.sin(x * .02 + 2) + .05 * Math.sin(x * .07)));
+    ctx.lineTo(w, 16 + ph); ctx.fill();
+    ctx.restore();
+    const y0 = 16 + ph;
+    ctx.fillStyle = INK; ctx.font = `600 30px ${FONT}`; ctx.fillText('上海 · 晴', 28, y0 + 56);
+    ctx.fillStyle = SUB; ctx.font = `15px ${FONT}`; ctx.fillText('体感 28°   湿度 62%   东南风 3 级', 28, y0 + 88);
+    const tg = ctx.createLinearGradient(w - 160, 0, w - 24, 0); tg.addColorStop(0, '#f5a524'); tg.addColorStop(1, '#ef4f1a');
+    ctx.fillStyle = tg; ctx.font = `600 68px ${FONT}`; ctx.textAlign = 'right'; ctx.fillText('26°', w - 28, y0 + 86); ctx.textAlign = 'left';
+    const days = ['周五', '周六', '周日', '周一', '周二'], temps = ['27°', '25°', '22°', '24°', '28°'], dots = ['#f59e0b', '#38bdf8', '#3b6cf6', '#60a5fa', '#f59e0b'];
+    const cw = (w - 56) / 5;
+    for (let i = 0; i < 5; i++) {
+      const x = 28 + i * cw;
+      ctx.fillStyle = FAINT; ctx.font = `14px ${FONT}`; ctx.fillText(days[i], x, h - 30);
+      ctx.fillStyle = dots[i]; ctx.beginPath(); ctx.arc(x + 46, h - 35, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = INK; ctx.fillText(temps[i], x + 60, h - 30);
+    }
+  },
+  function dashboard(ctx, w, h) {
+    cardBg(ctx, w, h);
+    ctx.fillStyle = INK; ctx.font = `600 24px ${FONT}`; ctx.fillText('本周运营概览', 28, 50);
+    ctx.fillStyle = FAINT; ctx.font = `14px ${FONT}`; ctx.fillText('10月9日 – 10月15日', 28, 76);
+    const kpi = [['访问量', '12.8万', '#0891b2'], ['转化率', '64.2%', '#7c3aed'], ['环比', '+18%', '#059669']];
+    kpi.forEach(([l, v, c], i) => {
+      const x = 28 + i * (w - 56) / 3;
+      ctx.fillStyle = SUB; ctx.font = `14px ${FONT}`; ctx.fillText(l, x, 116);
+      ctx.fillStyle = c; ctx.font = `600 34px ${FONT}`; ctx.fillText(v, x, 156);
+    });
+    const vals = [.42, .58, .5, .74, .66, .9, .81], bx = 28, by = h - 40, bw = (w - 56) / 7, bh = h - 230;
+    ctx.strokeStyle = '#d9dee6'; ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx, by - i * bh / 3 + .5); ctx.lineTo(w - 28, by - i * bh / 3 + .5); ctx.stroke(); }
+    vals.forEach((v, i) => {
+      const x = bx + i * bw + bw * .2, hh = v * bh;
+      const g = ctx.createLinearGradient(0, by - hh, 0, by); g.addColorStop(0, '#22d3ee'); g.addColorStop(1, '#6366f1');
+      rr(ctx, x, by - hh, bw * .6, hh, 6); ctx.fillStyle = g; ctx.fill();
+      ctx.fillStyle = FAINT; ctx.font = `12px ${FONT}`; ctx.fillText('一二三四五六日'[i], x + bw * .3 - 6, by + 22);
+    });
+  },
+  function article(ctx, w, h) {
+    cardBg(ctx, w, h);
+    ctx.fillStyle = '#f0581f'; rr(ctx, 28, 30, 4, 34, 2); ctx.fill();
+    ctx.fillStyle = INK; ctx.font = `600 26px ${FONT}`; ctx.fillText('液体为什么能记住形状', 44, 58);
+    ctx.fillStyle = FAINT; ctx.font = `13px ${FONT}`; ctx.fillText('Forma 实验笔记 · 第 3 篇', 44, 86);
+    ctx.fillStyle = '#323a49'; ctx.font = `16px ${FONT}`;
+    let y = wrap(ctx, '在这块面板里，没有“先画好再显示”的图片。你看到的每一个字、每一道颜色，都是同一份液体流过去之后停下来的样子。', 28, 128, w - 56, 28);
+    y = wrap(ctx, '液体总量是固定的：画面用得越多，液团就越小，剩下的液体会聚成一个小液团，等待下一次成形。', 28, y + 10, w - 56, 28);
+    ctx.fillStyle = '#e0531c'; ctx.font = `600 16px ${FONT}`; ctx.fillText('试试用鼠标划过画面，或者按住拖动选中这段文字。', 28, y + 16);
+  },
+];
+
+// ---------- layout ----------
+const textEl = document.getElementById('text');
+let preset = -1, card = null, blob = { x: 0, y: 0, r: 1 }, pool = blob;
+function placeBlob() {
+  const rCss = Math.max(80, Math.min(140, Math.min(W, H) / DPR * .17));
+  blob = { x: W / 2, y: H / 2, r: rCss * DPR };
+}
+function prepareCard(idx) {
+  textEl.style.visibility = 'hidden'; textEl.innerHTML = '';
+  if (idx < 0) { card = null; pool = blob; return; }
+  const cssW = Math.min(540, W / DPR - 32);
+  const cw = Math.round(cssW * DPR); let ch = Math.round(370 * DPR);
+  if (cw * ch > N * .8) ch = Math.floor(N * .8 / cw);
+  const frac = cw * ch / N;
+  const pr = blob.r * Math.cbrt(1 - frac);
+  const gap = 28 * DPR;
+  const cx = Math.round(W / 2 - cw / 2);
+  const cy = Math.round(Math.max(16 * DPR, (H - ch - gap - 2 * pr) / 2));
+  pool = { x: W / 2, y: Math.min(cy + ch + gap + pr, H - pr - 8 * DPR), r: pr };
+
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  const ctx = c.getContext('2d'); ctx.scale(DPR, DPR);
+  const texts = [];
+  const fillText = ctx.fillText.bind(ctx);
+  ctx.fillText = (t, x, y) => {                      // 记下每一行字的位置，用来做可选中的文字层
+    const m = ctx.measureText(t);
+    const left = ctx.textAlign === 'right' ? x - m.width : ctx.textAlign === 'center' ? x - m.width / 2 : x;
+    texts.push({ t, left, top: y - m.fontBoundingBoxAscent, h: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent, w: m.width, font: ctx.font });
+    fillText(t, x, y);
+  };
+  CONTENTS[idx](ctx, cw / DPR, ch / DPR);
+  gl.bindTexture(gl.TEXTURE_2D, contentTex);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  card = { x: cx, y: cy, w: cw, h: ch };
+
+  Object.assign(textEl.style, { left: cx / DPR + 'px', top: cy / DPR + 'px', width: cw / DPR + 'px', height: ch / DPR + 'px' });
+  for (const it of texts) {
+    const s = document.createElement('span');
+    s.textContent = it.t;
+    Object.assign(s.style, { font: it.font, left: it.left + 'px', top: it.top + 'px', lineHeight: it.h + 'px', height: it.h + 'px' });
+    textEl.appendChild(s);
+    const dw = s.getBoundingClientRect().width;
+    if (dw > 0) s.style.transform = `scaleX(${it.w / dw})`;
+  }
+}
+
+// ---------- state machine ----------
+let mode = 0, modeStart = 0, pending = -1, retFrom = 1e3;
+const FORM_T = 1.5, RETURN_T = 1.35;
+function now() { return performance.now() / 1000; }
+function show(idx) {
+  if (mode === 1 && idx === preset) return;
+  window.getSelection().removeAllRanges(); textEl.style.visibility = 'hidden';
+  if (mode === 1) { pending = idx; retFrom = Math.min(now() - modeStart, 1e3); mode = -1; modeStart = now(); return; }
+  if (mode === -1) { pending = idx; return; }
+  preset = idx; prepareCard(idx); mode = 1; modeStart = now();
+}
+function retract() {
+  if (mode === -1) { pending = -1; return; }
+  if (mode !== 1) return;
+  window.getSelection().removeAllRanges(); textEl.style.visibility = 'hidden';
+  pending = -1; retFrom = Math.min(now() - modeStart, 1e3); mode = -1; modeStart = now();
+}
+document.querySelectorAll('#ui button[data-p]').forEach(b => b.onclick = () => show(+b.dataset.p));
+document.getElementById('back').onclick = retract;
+
+let devW = 0, devH = 0;
+function resize() {
+  if (!devW) return;
+  W = devW; H = devH; canvas.width = W; canvas.height = H;
+  DPR = W / Math.max(canvas.clientWidth, 1);          // 画布像素正好等于屏幕物理像素，不被浏览器二次缩放
+  const cardPx = Math.round(Math.min(540, W / DPR - 32) * DPR) * Math.round(370 * DPR);
+  N = Math.max(1 << 18, Math.ceil(cardPx / .8));
+  freeTarget(splat); freeTarget(hA); freeTarget(hB);
+  splat = makeTarget(W, H);
+  hA = makeTarget(Math.ceil(W / 2), Math.ceil(H / 2), gl.R16F, gl.RED); hB = makeTarget(Math.ceil(W / 2), Math.ceil(H / 2), gl.R16F, gl.RED);
+  placeBlob();
+  prepareCard(mode !== 0 ? preset : -1);
+  if (mode === 0) preset = -1;
+}
+const ro = new ResizeObserver(([e]) => {
+  const b = e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0];
+  devW = b ? b.inlineSize : Math.round(e.contentRect.width * devicePixelRatio);
+  devH = b ? b.blockSize : Math.round(e.contentRect.height * devicePixelRatio);
+  resize();
+});
+try { ro.observe(canvas, { box: 'device-pixel-content-box' }); } catch (_) { ro.observe(canvas); }
+
+// ---------- mouse ----------
+const mouse = { x: -1e5, y: -1e5, px: null, py: null, vx: 0, vy: 0, down: 0 };
+const ripples = [];   // {x, y(GL), t, amp}
+let lastRip = null;
+addEventListener('pointermove', ev => {
+  mouse.x = ev.clientX * DPR; mouse.y = ev.clientY * DPR;
+  mouse.down = (ev.buttons & 1) ? 1 : 0;
+  if (mouse.down) return;
+  const t = now();
+  const d = lastRip ? Math.hypot(mouse.x - lastRip.x, mouse.y - lastRip.y) : 1e9;
+  if (d > 30 * DPR || (lastRip && t - lastRip.t > .15 && d > 4 * DPR)) {
+    const amp = Math.min(1, Math.max(.35, (lastRip ? d : 30 * DPR) / (60 * DPR)));
+    lastRip = { x: mouse.x, y: mouse.y, t };
+    ripples.push({ x: mouse.x, y: H - mouse.y, t, amp });
+    if (ripples.length > 12) ripples.shift();
+  }
+});
+addEventListener('pointerdown', ev => { if (ev.button === 0) mouse.down = 1; });
+for (const t of ['pointerup', 'pointercancel', 'blur', 'contextmenu']) addEventListener(t, () => { mouse.down = 0; });
+document.documentElement.addEventListener('pointerleave', () => { mouse.x = mouse.y = -1e5; mouse.px = null; });
+const ripBuf = new Float32Array(48);
+
+// ---------- frame ----------
+const fpsEl = document.getElementById('fps');
+let fpsN = 0, fpsT = now();
+const t0 = now();
+function frame() {
+  if (!splat) { requestAnimationFrame(frame); return; }
+  const t = now(), time = t - t0;
+  if (mode === -1 && t - modeStart > RETURN_T) {
+    mode = 0; preset = -1; prepareCard(-1);
+    if (pending >= 0) { const p = pending; pending = -1; show(p); }
+  }
+  const uT = t - modeStart;
+  textEl.style.visibility = mode === 1 && uT > FORM_T + .25 ? 'visible' : 'hidden';
+
+  let move = 0;
+  if (mode === 1) move = Math.max(0, 1 - Math.abs(uT - .75) / .9);
+  if (mode === -1) move = Math.max(0, 1 - Math.abs(uT - .7) / .8);
+  const sweep = mode === 1 ? -0.4 + (uT - FORM_T + .1) * 1.8 : -9;
+
+  if (mouse.px !== null && mouse.x > -1e4) {
+    mouse.vx = mouse.vx * .7 + (mouse.x - mouse.px) * .3; mouse.vy = mouse.vy * .7 + (mouse.y - mouse.py) * .3;
+  } else { mouse.vx *= .7; mouse.vy *= .7; }
+  const vl = Math.hypot(mouse.vx, mouse.vy), vmax = 40 * DPR;
+  if (vl > vmax) { mouse.vx *= vmax / vl; mouse.vy *= vmax / vl; }
+  mouse.px = mouse.x > -1e4 ? mouse.x : null; mouse.py = mouse.y;
+
+  ripBuf.fill(0);
+  ripples.forEach((r, i) => { const age = t - r.t; if (age < 2.5) ripBuf.set([r.x, r.y, age, r.amp], i * 4); });
+
+  // 1. 把每滴液体画进“液体厚度 + 颜色”图
+  gl.bindFramebuffer(gl.FRAMEBUFFER, splat.fb); gl.viewport(0, 0, splat.w, splat.h);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(pSplat.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, contentTex); gl.uniform1i(pSplat.u.uContent, 0);
+  if (card) gl.uniform4f(pSplat.u.uCard, card.x, card.y, card.w, card.h); else gl.uniform4f(pSplat.u.uCard, 0, 0, 0, 0);
+  gl.uniform3f(pSplat.u.uBlob, blob.x, blob.y, blob.r); gl.uniform3f(pSplat.u.uPool, pool.x, pool.y, pool.r);
+  gl.uniform2f(pSplat.u.uRes, W, H); gl.uniform2f(pSplat.u.uMouse, mouse.x, mouse.y); gl.uniform2f(pSplat.u.uMVel, mouse.vx, mouse.vy);
+  gl.uniform1f(pSplat.u.uN, N); gl.uniform1f(pSplat.u.uT, uT); gl.uniform1f(pSplat.u.uMode, mode);
+  gl.uniform1f(pSplat.u.uTime, time); gl.uniform1f(pSplat.u.uDpr, DPR);
+  gl.uniform1f(pSplat.u.uHwBlob, 2 * Math.PI * blob.r ** 3 / (3 * N)); gl.uniform1f(pSplat.u.uHwCard, 3);
+  gl.uniform1f(pSplat.u.uCell, 20 * DPR); gl.uniform1f(pSplat.u.uDown, mouse.down); gl.uniform1f(pSplat.u.uFrom, retFrom);
+  gl.bindVertexArray(vao); gl.drawArrays(gl.POINTS, 0, N); gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+
+  // 2. 厚度模糊成液面高度
+  gl.useProgram(pBlur.p); gl.uniform1i(pBlur.u.uTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hA.fb); gl.viewport(0, 0, hA.w, hA.h);
+  gl.bindTexture(gl.TEXTURE_2D, splat.tex); gl.uniform2f(pBlur.u.uDir, 3 * DPR / splat.w, 0); gl.uniform4f(pBlur.u.uMask, 0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hB.fb);
+  gl.bindTexture(gl.TEXTURE_2D, hA.tex); gl.uniform2f(pBlur.u.uDir, 0, 1.5 * DPR / hA.h); gl.uniform4f(pBlur.u.uMask, 1, 0, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 3. 按液面高度打光、反射、折射
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(pComp.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, splat.tex); gl.uniform1i(pComp.u.uD, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hB.tex); gl.uniform1i(pComp.u.uH, 1);
+  gl.uniform2f(pComp.u.uRes, W, H); gl.uniform1f(pComp.u.uTime, time); gl.uniform1f(pComp.u.uSweep, sweep);
+  gl.uniform1f(pComp.u.uMove, move); gl.uniform1f(pComp.u.uDpr, DPR); gl.uniform1f(pComp.u.uHwCard, 3);
+  gl.uniform4fv(pComp.u['uRip[0]'], ripBuf);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+
+  fpsN++;
+  if (t - fpsT > .5) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} FPS · ${N.toLocaleString()} 滴液体 · ${DPR}x`; fpsN = 0; fpsT = t; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+setTimeout(() => { if (preset < 0 && mode === 0) show(0); }, 1800);
+</script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+
+> forma-particle-panel@1.0.0 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: nested rotation hit mapping round trips
+ok 1 - nested rotation hit mapping round trips
+  ---
+  duration_ms: 1.238083
+  type: 'test'
+  ...
+# Subtest: graphemes wrap without splitting combining characters or losing source offsets
+ok 2 - graphemes wrap without splitting combining characters or losing source offsets
+  ---
+  duration_ms: 9.239958
+  type: 'test'
+  ...
+# Subtest: negative chart range includes zero and null is not numeric zero
+ok 3 - negative chart range includes zero and null is not numeric zero
+  ---
+  duration_ms: 0.434709
+  type: 'test'
+  ...
+# Subtest: animation loops and once clamps without revision updates
+ok 4 - animation loops and once clamps without revision updates
+  ---
+  duration_ms: 0.084375
+  type: 'test'
+  ...
+# Subtest: critical damping matches closed-form step and does not overshoot
+ok 5 - critical damping matches closed-form step and does not overshoot
+  ---
+  duration_ms: 1.208375
+  type: 'test'
+  ...
+# Subtest: motion agrees at 30, 60, 120 and 240 Hz and repeated timestamps are inert
+ok 6 - motion agrees at 30, 60, 120 and 240 Hz and repeated timestamps are inert
+  ---
+  duration_ms: 1.087083
+  type: 'test'
+  ...
+# Subtest: new input after long idle starts from rest and at the contact position
+ok 7 - new input after long idle starts from rest and at the contact position
+  ---
+  duration_ms: 0.084375
+  type: 'test'
+  ...
+# Subtest: pointer position eases through an input change rather than jumping
+ok 8 - pointer position eases through an input change rather than jumping
+  ---
+  duration_ms: 0.0655
+  type: 'test'
+  ...
+# Subtest: release after a long hold and disabling disturbance settle fully
+ok 9 - release after a long hold and disabling disturbance settle fully
+  ---
+  duration_ms: 0.149333
+  type: 'test'
+  ...
+# Subtest: reduced motion removes displacement immediately with no residual frames
+ok 10 - reduced motion removes displacement immediately with no residual frames
+  ---
+  duration_ms: 0.050083
+  type: 'test'
+  ...
+# Subtest: all local fixtures are valid and independent objects
+ok 11 - all local fixtures are valid and independent objects
+  ---
+  duration_ms: 3.785958
+  type: 'test'
+  ...
+# Subtest: compatible text/chart specification fixtures pass; future subtitle capability is rejected
+ok 12 - compatible text/chart specification fixtures pass; future subtitle capability is rejected
+  ---
+  duration_ms: 5.258167
+  type: 'test'
+  ...
+# Subtest: unknown executable fields, old protocol, capabilities and unregistered sources are rejected
+ok 13 - unknown executable fields, old protocol, capabilities and unregistered sources are rejected
+  ---
+  duration_ms: 1.403417
+  type: 'test'
+  ...
+# Subtest: identifiers, parents, cycles, and layout constraints are enforced
+ok 14 - identifiers, parents, cycles, and layout constraints are enforced
+  ---
+  duration_ms: 2.076542
+  type: 'test'
+  ...
+# Subtest: dataset field types and complete keys are strict, nulls and negative/zero values survive
+ok 15 - dataset field types and complete keys are strict, nulls and negative/zero values survive
+  ---
+  duration_ms: 1.696291
+  type: 'test'
+  ...
+# Subtest: chart references and zero baseline cannot be misrepresented
+ok 16 - chart references and zero baseline cannot be misrepresented
+  ---
+  duration_ms: 0.447208
+  type: 'test'
+  ...
+# Subtest: animations have complete ordered timelines and only supported targets/properties
+ok 17 - animations have complete ordered timelines and only supported targets/properties
+  ---
+  duration_ms: 1.75225
+  type: 'test'
+  ...
+# Subtest: actions validate both whitelist and target capability
+ok 18 - actions validate both whitelist and target capability
+  ---
+  duration_ms: 0.505208
+  type: 'test'
+  ...
+# Subtest: quotas bound combined text, nodes, rows and byte count
+ok 19 - quotas bound combined text, nodes, rows and byte count
+  ---
+  duration_ms: 2.172791
+  type: 'test'
+  ...
+# Subtest: validator isolates input and rejects non-JSON objects without invoking getters
+ok 20 - validator isolates input and rejects non-JSON objects without invoking getters
+  ---
+  duration_ms: 0.510834
+  type: 'test'
+  ...
+# Subtest: JSON and fenced JSON parse strictly; malformed structured outputs never become fake answers
+ok 21 - JSON and fenced JSON parse strictly; malformed structured outputs never become fake answers
+  ---
+  duration_ms: 1.566125
+  type: 'test'
+  ...
+# Subtest: local replies identify their origin and chart changes preserve values without mutation
+ok 22 - local replies identify their origin and chart changes preserve values without mutation
+  ---
+  duration_ms: 0.806959
+  type: 'test'
+  ...
+# Subtest: health, configuration lifecycle and unconfigured generation
+ok 23 - health, configuration lifecycle and unconfigured generation
+  ---
+  duration_ms: 30.427917
+  type: 'test'
+  ...
+# Subtest: OpenAI-compatible adapter preserves raw text and keeps context out of system role
+ok 24 - OpenAI-compatible adapter preserves raw text and keeps context out of system role
+  ---
+  duration_ms: 10.751875
+  type: 'test'
+  ...
+# Subtest: Anthropic adapter uses top-level system, required headers and text blocks
+ok 25 - Anthropic adapter uses top-level system, required headers and text blocks
+  ---
+  duration_ms: 8.550875
+  type: 'test'
+  ...
+# Subtest: configuration rejects unsafe addresses and retains last valid config
+ok 26 - configuration rejects unsafe addresses and retains last valid config
+  ---
+  duration_ms: 10.447333
+  type: 'test'
+  ...
+# Subtest: Host, Origin, Fetch Metadata and JSON checks protect write endpoints
+ok 27 - Host, Origin, Fetch Metadata and JSON checks protect write endpoints
+  ---
+  duration_ms: 9.211
+  type: 'test'
+  ...
+# Subtest: static files are confined to app root, with HEAD, MIME, CSP and byte ranges
+ok 28 - static files are confined to app root, with HEAD, MIME, CSP and byte ranges
+  ---
+  duration_ms: 12.062667
+  type: 'test'
+  ...
+# Subtest: provider errors never return the upstream body or credentials
+ok 29 - provider errors never return the upstream body or credentials
+  ---
+  duration_ms: 5.924666
+  type: 'test'
+  ...
+# Subtest: provider redirect is refused and no request reaches its target
+ok 30 - provider redirect is refused and no request reaches its target
+  ---
+  duration_ms: 4.593333
+  type: 'test'
+  ...
+# Subtest: invalid and excessively large provider responses are bounded
+ok 31 - invalid and excessively large provider responses are bounded
+  ---
+  duration_ms: 17.063875
+  type: 'test'
+  ...
+# Subtest: active request ids are unique; explicit cancellation aborts upstream and frees id
+ok 32 - active request ids are unique; explicit cancellation aborts upstream and frees id
+  ---
+  duration_ms: 5.959208
+  type: 'test'
+  ...
+# Subtest: client disconnect cancels the in-flight provider request
+ok 33 - client disconnect cancels the in-flight provider request
+  ---
+  duration_ms: 4.213458
+  type: 'test'
+  ...
+# Subtest: provider deadline aborts pending fetch with a controlled error
+ok 34 - provider deadline aborts pending fetch with a controlled error
+  ---
+  duration_ms: 35.757
+  type: 'test'
+  ...
+# Subtest: clearing provider configuration cancels active generation
+ok 35 - clearing provider configuration cancels active generation
+  ---
+  duration_ms: 4.559834
+  type: 'test'
+  ...
+1..35
+# tests 35
+# suites 0
+# pass 35
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 287.268542

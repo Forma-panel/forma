@@ -1,0 +1,100 @@
+{
+  "protocol": "panel-scene/0.3",
+  "summary": "旋转形状与本地短片的媒体绑定示例",
+  "nodes": [
+    {
+      "id": "answer",
+      "parentId": null,
+      "kind": "group",
+      "direction": "column",
+      "gap": 16,
+      "layout": {
+        "mode": "flow",
+        "width": "fill"
+      }
+    },
+    {
+      "id": "figure",
+      "parentId": "answer",
+      "kind": "group",
+      "direction": "free",
+      "viewBox": {
+        "width": 400,
+        "height": 240
+      },
+      "layout": {
+        "mode": "flow",
+        "height": 240
+      }
+    },
+    {
+      "id": "marker",
+      "parentId": "figure",
+      "kind": "shape",
+      "shape": "rect",
+      "label": "旋转示意方块",
+      "material": "accent",
+      "layout": {
+        "mode": "absolute",
+        "x": 170,
+        "y": 90,
+        "width": 60,
+        "height": 60
+      }
+    },
+    {
+      "id": "illustration",
+      "parentId": "answer",
+      "kind": "image",
+      "assetId": "localImage",
+      "alt": "本地图片示例",
+      "fit": "contain",
+      "layout": {
+        "mode": "flow",
+        "height": 200
+      }
+    },
+    {
+      "id": "clip",
+      "parentId": "answer",
+      "kind": "video",
+      "assetId": "localClip",
+      "label": "本地短片示例",
+      "captionsAssetId": "localCaptions",
+      "fit": "contain",
+      "layout": {
+        "mode": "flow",
+        "height": 240
+      }
+    }
+  ],
+  "datasets": [],
+  "animations": [
+    {
+      "id": "rotateMarker",
+      "target": "marker",
+      "property": "rotate",
+      "durationMs": 4000,
+      "repeat": "loop",
+      "keyframes": [
+        {
+          "timeMs": 0,
+          "value": 0
+        },
+        {
+          "timeMs": 4000,
+          "value": 360
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "toggleClip",
+      "target": "clip",
+      "kind": "toggle-playback",
+      "label": "播放或暂停"
+    }
+  ]
+}
+

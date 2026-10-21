@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forma 液体成像原型</title>
+<style>
+html,body{margin:0;height:100%;background:#f6f7f9;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+#ui{position:fixed;left:16px;top:16px;display:flex;gap:8px;flex-wrap:wrap;z-index:2}
+#ui button{background:rgba(0,0,0,.04);color:#2a2f3a;border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+#ui button:hover{background:rgba(0,0,0,.08)}
+#fps{position:fixed;right:16px;top:16px;color:#8a93a3;font:12px ui-monospace,Menlo,monospace;z-index:2}
+#err{position:fixed;inset:auto 16px 16px 16px;color:#d33;font:13px ui-monospace,Menlo,monospace;white-space:pre-wrap;z-index:3}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="ui">
+  <button data-p="0">天气卡片</button>
+  <button data-p="1">数据面板</button>
+  <button data-p="2">文章</button>
+  <button id="back">收回成石碑</button>
+</div>
+<div id="fps"></div>
+<div id="err"></div>
+<script>
+'use strict';
+const errBox = document.getElementById('err');
+function fail(msg) { errBox.textContent = msg; throw new Error(msg); }
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) fail('浏览器不支持 WebGL2');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('显卡不支持浮点渲染目标 (EXT_color_buffer_float)');
+
+const NMAX = 1 << 20;
+let N = NMAX;               // 液体总量（滴数），整个过程守恒；按屏幕像素密度决定
+const RHO = 3;              // 石碑里液体的厚度（每个屏幕物理像素的液滴数）
+
+// ---------- shaders ----------
+const FS_TRI = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); vUv = p; gl_Position = vec4(p*2.-1.,0.,1.); }`;
+
+// 每滴液体属于一“束”。飞行时整束收拢成一股液流，沿弯曲路径流过去，落地再摊开成画面。
+const SPLAT_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aHome;
+layout(location=1) in vec2 aTarget;
+layout(location=2) in vec4 aColor;   // rgb, a = 1 画面液体 / .5 储液池
+layout(location=3) in vec4 aParam;   // delay, dur, bend, rand
+layout(location=4) in vec4 aBundle;  // 这一束在石碑里的中心 xy, 落点中心 zw
+uniform vec2 uRes;
+uniform float uT, uMode, uTime, uDpr;
+out vec3 vCol; out float vSig; out float vSize;
+float easeIO(float s){ return s<.5 ? 4.*s*s*s : 1.-pow(-2.*s+2.,3.)*.5; }
+vec2 bez(vec2 a, vec2 b, vec2 c, float t){ return mix(mix(a,b,t), mix(b,c,t), t); }
+void main(){
+  float s = 0.;
+  if (uMode > .5) s = clamp((uT - aParam.x) / aParam.y, 0., 1.);
+  else if (uMode < -.5) { float d = (.95 - aParam.x) * .8; s = 1. - clamp((uT - d) / aParam.y, 0., 1.); }
+  float e = easeIO(s);
+  float bump = 4. * s * (1. - s);
+
+  vec2 hb = aBundle.xy, tb = aBundle.zw;
+  vec2 d = tb - hb; float L = length(d) + 1e-3; vec2 dir = d / L; vec2 perp = vec2(-dir.y, dir.x);
+  vec2 c1 = mix(hb, tb, .5) + perp * aParam.z * L + vec2(0., -.22 * L);
+  vec2 center = bez(hb, c1, tb, e);
+  vec2 q = center * .006 / uDpr;
+  center += vec2(sin(q.y*3.1 + uTime*1.3), cos(q.x*2.7 - uTime*1.1)) * 30. * uDpr * bump;
+
+  vec2 off = mix(aHome - hb, aTarget - tb, e) * (1. - .78 * smoothstep(0., .7, bump));
+  vec2 p = center + off;
+
+  vec2 hp = aHome / uDpr;
+  p += vec2(sin(uTime*.7 + hp.y*.021), cos(uTime*.53 + hp.x*.019)) * 1.2 * uDpr * (1. - s);
+
+  if (uMode > .5) {
+    float a = uT - aParam.x - aParam.y;
+    if (a > 0.) p += dir * sin(a*14.) * exp(-a*6.) * 3. * uDpr;
+  }
+
+  vec3 ink = vec3(.015, .016, .02);
+  vec3 iri = .5 + .5 * cos(6.2832 * (s*.7 + aParam.w*.15 + vec3(0., .33, .67)));
+  vec3 col = mix(ink, aColor.rgb, smoothstep(.35, .85, s));
+  col = mix(col, iri * .3, .18 * bump * aColor.a);
+  vCol = col;
+
+  float restSig = mix(.95, aColor.a > .9 ? .6 : .95, s);
+  float sig = mix(restSig, 2.3, bump);
+  vSig = sig; vSize = ceil(sig * 6.);
+  gl_PointSize = vSize;
+  vec2 ndc = p / uRes * 2. - 1.;
+  gl_Position = vec4(ndc.x, -ndc.y, 0., 1.);
+}`;
+
+const SPLAT_FS = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vSig; in float vSize;
+out vec4 o;
+void main(){
+  vec2 d = (gl_PointCoord - .5) * vSize;
+  float w = exp(-dot(d,d) / (2.*vSig*vSig)) / (6.2832*vSig*vSig);
+  o = vec4(vCol * w, w);
+}`;
+
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex; uniform vec2 uDir; uniform vec4 uMask;
+in vec2 vUv; out vec4 o;
+void main(){
+  float w[5] = float[](.227027, .1945946, .1216216, .054054, .016216);
+  float s = dot(texture(uTex, vUv), uMask) * w[0];
+  for (int i = 1; i < 5; i++) {
+    s += dot(texture(uTex, vUv + uDir*float(i)), uMask) * w[i];
+    s += dot(texture(uTex, vUv - uDir*float(i)), uMask) * w[i];
+  }
+  o = vec4(s);
+}`;
+
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uD, uH;
+uniform vec2 uRes;
+uniform float uTime, uSweep, uMove, uDpr;
+in vec2 vUv; out vec4 o;
+
+vec3 env(vec3 r){                       // 白色摄影棚
+  vec3 c = mix(vec3(.22,.23,.26), vec3(.95,.96,.98), smoothstep(-.7, .7, r.y));
+  vec2 a = r.xy - vec2(-.38, .5);
+  c += vec3(1.) * 1.3 * smoothstep(.2, .1, max(abs(a.x)*.75, abs(a.y)*1.7));
+  c += vec3(.85,.9,1.) * .8 * smoothstep(.05, 0., abs(r.x - .62)) * smoothstep(.8, .1, abs(r.y));
+  c *= 1. - .55 * smoothstep(.2, .9, -r.y) * smoothstep(.0, .5, abs(r.x + .2));
+  return c;
+}
+float hf(float x){ return 3. * (1. - exp(-x / 3.)); }
+float H(vec2 uv){ return hf(texture(uH, uv).r); }
+
+void main(){
+  vec4 D = texture(uD, vUv);
+  float den = D.a;
+  vec3 base = D.rgb / max(den, 1e-4);
+  vec2 px = 1. / uRes;
+
+  float hraw = texture(uH, vUv).r;
+  vec2 e = px * 2. * uDpr;
+  vec2 g = vec2(H(vUv + vec2(e.x,0.)) - H(vUv - vec2(e.x,0.)), H(vUv + vec2(0.,e.y)) - H(vUv - vec2(0.,e.y))) * .9;
+  vec2 gd = vec2(texture(uD, vUv + vec2(px.x,0.)).a - texture(uD, vUv - vec2(px.x,0.)).a,
+                 texture(uD, vUv + vec2(0.,px.y)).a - texture(uD, vUv - vec2(0.,px.y)).a);
+  g += clamp(gd * .08, -.2, .2) * (1. - smoothstep(.4, 1.1, hraw));
+
+  float th = smoothstep(1.3, 2.6, hraw);
+  vec2 sp = vUv * uRes / uDpr;
+  vec2 rg = cos(dot(sp, vec2(.031,.018)) + uTime*1.1) * vec2(.031,.018)
+          + cos(dot(sp, vec2(-.022,.035)) + uTime*.8) * vec2(-.022,.035)
+          + cos(dot(sp, vec2(.05,-.041)) - uTime*1.5) * vec2(.05,-.041) * .6
+          + cos(dot(sp, vec2(.011,.007)) + uTime*.35) * vec2(.011,.007) * 3.;
+  g += rg * (4. * th + 2. * uMove);
+
+  vec3 n = normalize(vec3(-g, 1.));
+  vec3 r = reflect(vec3(0.,0.,-1.), n);
+  r.xy += (vUv - .5) * vec2(.7, .5);
+  r = normalize(r);
+
+  float F0 = mix(.04, .14, th);
+  float F = F0 + (1. - F0) * pow(1. - n.z, 5.);
+  vec3 L = normalize(vec3(-.4, .6, 1.));
+  float diff = .9 + .1 * dot(n, L);
+  vec3 liq = base * diff * (1. - F) + env(r) * F;
+  liq += pow(max(dot(r, normalize(vec3(-.35, .5, 1.))), 0.), 160.) * (.3 + .7 * th);
+
+  float sw = smoothstep(.05, 0., abs(vUv.x + vUv.y*.35 - uSweep));
+  liq += sw * vec3(.12) * (1. - th);
+
+  vec3 bg = mix(vec3(.93,.94,.95), vec3(.985,.988,.992), vUv.y);
+  float sh = texture(uH, vUv + vec2(.002, .016)).r;
+  bg *= 1. - .16 * smoothstep(0., 1.4, sh);
+  float sh2 = texture(uH, vUv + vec2(.0, .004)).r;
+  bg *= 1. - .1 * smoothstep(0., 1., sh2);
+
+  float m = smoothstep(.3, .55, den);
+  o = vec4(mix(bg, liq, m), 1.);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const pSplat = program(SPLAT_VS, SPLAT_FS);
+const pBlur = program(FS_TRI, BLUR_FS);
+const pComp = program(FS_TRI, COMP_FS);
+
+// ---------- particle buffers ----------
+const home = new Float32Array(NMAX * 2), tgt = new Float32Array(NMAX * 2), col = new Float32Array(NMAX * 4),
+      par = new Float32Array(NMAX * 4), bun = new Float32Array(NMAX * 4);
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const bufs = [[home, 2], [tgt, 2], [col, 4], [par, 4], [bun, 4]].map(([arr, size], loc) => {
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, arr.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  return [b, arr];
+});
+gl.bindVertexArray(null);
+function upload() { for (const [b, arr] of bufs) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr); } }
+
+// ---------- render targets ----------
+let W = 0, H = 0, DPR = 1, splat, hA, hB;
+function makeTarget(w, h) {
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+function freeTarget(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+
+// ---------- noise ----------
+function hash(x, y) { const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+function vn(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+// ---------- content (what the AI wants to show) ----------
+const FONT = '-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif';
+const INK = '#141821', SUB = '#5d6677', FAINT = '#8a93a3';
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function cardBg(ctx, w, h) {
+  const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#eef1f5');
+  rr(ctx, 0, 0, w, h, 24); ctx.fillStyle = g; ctx.fill();
+}
+function wrap(ctx, text, x, y, maxW, lh) {
+  let line = '';
+  for (const ch of text) {
+    if (ctx.measureText(line + ch).width > maxW) { ctx.fillText(line, x, y); y += lh; line = ch; } else line += ch;
+  }
+  if (line) ctx.fillText(line, x, y);
+  return y + lh;
+}
+const CONTENTS = [
+  function weather(ctx, w, h) {
+    cardBg(ctx, w, h);
+    const ph = h * .5;
+    ctx.save(); rr(ctx, 16, 16, w - 32, ph, 16); ctx.clip();
+    const sky = ctx.createLinearGradient(0, 16, 0, 16 + ph);
+    sky.addColorStop(0, '#2b1055'); sky.addColorStop(.55, '#d53369'); sky.addColorStop(1, '#ff9a44');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+    const sx = w * .68, sy = 16 + ph * .55;
+    const glow = ctx.createRadialGradient(sx, sy, 10, sx, sy, 120); glow.addColorStop(0, 'rgba(255,224,138,.85)'); glow.addColorStop(1, 'rgba(255,224,138,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(sx, sy, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a1f5c'; ctx.beginPath(); ctx.moveTo(0, 16 + ph);
+    for (let x = 0; x <= w; x += 40) ctx.lineTo(x, 16 + ph * (.66 + .16 * Math.sin(x * .013) + .07 * Math.sin(x * .041)));
+    ctx.lineTo(w, 16 + ph); ctx.fill();
+    ctx.fillStyle = '#1c0e2b'; ctx.beginPath(); ctx.moveTo(0, 16 + ph);
+    for (let x = 0; x <= w; x += 30) ctx.lineTo(x, 16 + ph * (.82 + .09 * Math.sin(x * .02 + 2) + .05 * Math.sin(x * .07)));
+    ctx.lineTo(w, 16 + ph); ctx.fill();
+    ctx.restore();
+    const y0 = 16 + ph;
+    ctx.fillStyle = INK; ctx.font = `600 30px ${FONT}`; ctx.fillText('上海 · 晴', 28, y0 + 56);
+    ctx.fillStyle = SUB; ctx.font = `15px ${FONT}`; ctx.fillText('体感 28°   湿度 62%   东南风 3 级', 28, y0 + 88);
+    const tg = ctx.createLinearGradient(w - 160, 0, w - 24, 0); tg.addColorStop(0, '#f5a524'); tg.addColorStop(1, '#ef4f1a');
+    ctx.fillStyle = tg; ctx.font = `600 68px ${FONT}`; ctx.textAlign = 'right'; ctx.fillText('26°', w - 28, y0 + 86); ctx.textAlign = 'left';
+    const days = ['周五', '周六', '周日', '周一', '周二'], temps = ['27°', '25°', '22°', '24°', '28°'], dots = ['#f59e0b', '#38bdf8', '#3b6cf6', '#60a5fa', '#f59e0b'];
+    const cw = (w - 56) / 5;
+    for (let i = 0; i < 5; i++) {
+      const x = 28 + i * cw;
+      ctx.fillStyle = FAINT; ctx.font = `14px ${FONT}`; ctx.fillText(days[i], x, h - 30);
+      ctx.fillStyle = dots[i]; ctx.beginPath(); ctx.arc(x + 46, h - 35, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = INK; ctx.fillText(temps[i], x + 60, h - 30);
+    }
+  },
+  function dashboard(ctx, w, h) {
+    cardBg(ctx, w, h);
+    ctx.fillStyle = INK; ctx.font = `600 24px ${FONT}`; ctx.fillText('本周运营概览', 28, 50);
+    ctx.fillStyle = FAINT; ctx.font = `14px ${FONT}`; ctx.fillText('10月9日 – 10月15日', 28, 76);
+    const kpi = [['访问量', '12.8万', '#0891b2'], ['转化率', '64.2%', '#7c3aed'], ['环比', '+18%', '#059669']];
+    kpi.forEach(([l, v, c], i) => {
+      const x = 28 + i * (w - 56) / 3;
+      ctx.fillStyle = SUB; ctx.font = `14px ${FONT}`; ctx.fillText(l, x, 116);
+      ctx.fillStyle = c; ctx.font = `600 34px ${FONT}`; ctx.fillText(v, x, 156);
+    });
+    const vals = [.42, .58, .5, .74, .66, .9, .81], bx = 28, by = h - 40, bw = (w - 56) / 7, bh = h - 230;
+    ctx.strokeStyle = '#d9dee6'; ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx, by - i * bh / 3 + .5); ctx.lineTo(w - 28, by - i * bh / 3 + .5); ctx.stroke(); }
+    vals.forEach((v, i) => {
+      const x = bx + i * bw + bw * .2, hh = v * bh;
+      const g = ctx.createLinearGradient(0, by - hh, 0, by); g.addColorStop(0, '#22d3ee'); g.addColorStop(1, '#6366f1');
+      rr(ctx, x, by - hh, bw * .6, hh, 6); ctx.fillStyle = g; ctx.fill();
+      ctx.fillStyle = FAINT; ctx.font = `12px ${FONT}`; ctx.fillText('一二三四五六日'[i], x + bw * .3 - 6, by + 22);
+    });
+  },
+  function article(ctx, w, h) {
+    cardBg(ctx, w, h);
+    ctx.fillStyle = '#f0581f'; rr(ctx, 28, 30, 4, 34, 2); ctx.fill();
+    ctx.fillStyle = INK; ctx.font = `600 26px ${FONT}`; ctx.fillText('液体为什么能记住形状', 44, 58);
+    ctx.fillStyle = FAINT; ctx.font = `13px ${FONT}`; ctx.fillText('Forma 实验笔记 · 第 3 篇', 44, 86);
+    ctx.fillStyle = '#323a49'; ctx.font = `16px ${FONT}`;
+    let y = wrap(ctx, '在这块面板里，没有“先画好再显示”的图片。你看到的每一个字、每一道颜色，都是同一份液体流过去之后停下来的样子。', 28, 128, w - 56, 28);
+    y = wrap(ctx, '液体总量是固定的：画面用得越多，石碑就越少，剩下的液体会聚在下方等待下一次成形。', 28, y + 10, w - 56, 28);
+    ctx.fillStyle = '#e0531c'; ctx.font = `600 16px ${FONT}`; ctx.fillText('点击上方按钮，换一个画面试试。', 28, y + 16);
+  },
+];
+
+// ---------- layout: where every drop starts and lands (all in device pixels) ----------
+let preset = -1;
+function monoRect() {
+  const area = N / RHO, w = Math.sqrt(area / 2.25), h = w * 2.25;
+  return { w, h, x: W / 2 - w / 2, y: H / 2 - h / 2 };
+}
+function layout(idx) {
+  const mono = monoRect();
+  const CELL = 44 * DPR;                      // 一束液流负责的画面区域
+  let M = 0, cw = 0, ch = 0, cx = 0, cy = 0, data = null;
+  if (idx >= 0) {
+    const cssW = Math.min(540, W / DPR - 32), cssH = 370;
+    cw = Math.round(cssW * DPR); ch = Math.round(cssH * DPR);
+    if (cw * ch > N * .85) ch = Math.floor(N * .85 / cw);
+    cx = Math.round(W / 2 - cw / 2); cy = Math.round(Math.max(16 * DPR, H / 2 - ch / 2 - 50 * DPR));
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.scale(DPR, DPR); CONTENTS[idx](ctx, cw / DPR, ch / DPR);
+    data = ctx.getImageData(0, 0, cw, ch).data;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 127) M++;
+  }
+  const frac = M / N;
+  const mapHome = (u, v) => [mono.x + u * mono.w, mono.y + v * frac * mono.h];
+
+  let k = 0;
+  if (data) for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const o = (y * cw + x) * 4;
+    if (data[o + 3] <= 127) continue;
+    const u = (x + .5) / cw, v = (y + .5) / ch;
+    const [hx, hy] = mapHome(u, v);
+    home[k * 2] = hx + (hash(x, y) - .5) * .3; home[k * 2 + 1] = hy + (hash(y, x) - .5) * .6;
+    tgt[k * 2] = cx + x + .5; tgt[k * 2 + 1] = cy + y + .5;
+    col[k * 4] = data[o] / 255; col[k * 4 + 1] = data[o + 1] / 255; col[k * 4 + 2] = data[o + 2] / 255; col[k * 4 + 3] = 1;
+    const by = Math.floor((y + (vn(x * .02 / DPR, y * .02 / DPR + 40) - .5) * CELL * .9) / CELL);
+    const bx = Math.floor((x + (by & 1) * CELL * .5 + (vn(x * .02 / DPR + 20, y * .02 / DPR) - .5) * CELL * .9) / CELL);
+    const bcx = Math.max(0, Math.min((bx + .5) * CELL - (by & 1) * CELL * .5, cw - 1)), bcy = Math.max(0, Math.min((by + .5) * CELL, ch - 1));
+    const [bhx, bhy] = mapHome(bcx / cw, bcy / ch);
+    bun[k * 4] = bhx; bun[k * 4 + 1] = bhy; bun[k * 4 + 2] = cx + bcx; bun[k * 4 + 3] = cy + bcy;
+    par[k * 4] = .05 + .5 * (.55 * (bcy / ch) + .45 * hash(bx + 11, by + 7)) + .32 * hash(x * 1.3, y * .7);
+    par[k * 4 + 1] = 1.05 + .3 * hash(bx * 2.1, by * 3.7);
+    par[k * 4 + 2] = (vn(bx * .35 + 5.3, by * .35 + 1.9) - .5) * 1.4;
+    par[k * 4 + 3] = hash(x * 3.1, y * 1.3);
+    k++;
+  }
+
+  // 剩余液体：石碑下部 -> 储液池（方形到椭圆的连续映射，保持液流成束）
+  const P = N - k;
+  const regionH = (1 - frac) * mono.h;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(P * mono.w / Math.max(regionH, 1)))), rows = Math.ceil(P / cols);
+  const poolArea = P / RHO, aspect = 5;
+  const pa = Math.sqrt(poolArea / Math.PI * aspect), pb = pa / aspect;
+  const px = W / 2, py = data ? Math.min(H - pb - 12 * DPR, cy + ch + 40 * DPR + pb) : H / 2;
+  const poolT = (u, v) => {
+    const a = 2 * u - 1, b = 2 * v - 1;
+    return [px + pa * a * Math.sqrt(1 - b * b / 2), py + pb * b * Math.sqrt(1 - a * a / 2)];
+  };
+  const homeOf = (u, v) => [mono.x + u * mono.w, mono.y + (frac + v * (1 - frac)) * mono.h];
+  const BU = 10, BV = 3;
+  for (let j = 0; j < P; j++, k++) {
+    const gx = j % cols, gy = Math.floor(j / cols);
+    const u = (gx + .5 + (hash(j, 1) - .5) * .3) / cols, v = (gy + .5 + (hash(j, 2) - .5) * .3) / rows;
+    const [hx, hy] = homeOf(u, v); home[k * 2] = hx; home[k * 2 + 1] = hy;
+    const bu = (Math.floor(u * BU) + .5) / BU, bv = (Math.floor(v * BV) + .5) / BV;
+    const [bhx, bhy] = homeOf(bu, bv);
+    if (data) {
+      const [tx, ty] = poolT(u, v); tgt[k * 2] = tx; tgt[k * 2 + 1] = ty;
+      const [btx, bty] = poolT(bu, bv); bun[k * 4 + 2] = btx; bun[k * 4 + 3] = bty;
+    } else { tgt[k * 2] = hx; tgt[k * 2 + 1] = hy; bun[k * 4 + 2] = bhx; bun[k * 4 + 3] = bhy; }
+    bun[k * 4] = bhx; bun[k * 4 + 1] = bhy;
+    col[k * 4] = .015; col[k * 4 + 1] = .016; col[k * 4 + 2] = .02; col[k * 4 + 3] = .5;
+    par[k * 4] = .15 + .45 * bv + .1 * hash(Math.floor(u * BU), 3) + .25 * hash(j, 3);
+    par[k * 4 + 1] = 1.1 + .3 * hash(Math.floor(u * BU), Math.floor(v * BV));
+    par[k * 4 + 2] = (hash(Math.floor(u * BU) * 3.3, 9) - .5) * 1.2;
+    par[k * 4 + 3] = hash(j, 5);
+  }
+  upload();
+}
+
+// ---------- state machine ----------
+let mode = 0, modeStart = 0, pending = -1;
+const FORM_T = 2.4, RETURN_T = 2.3;
+function now() { return performance.now() / 1000; }
+function show(idx) {
+  if (mode === 1 && idx === preset) return;
+  if (mode === 1) { pending = idx; mode = -1; modeStart = now(); return; }
+  if (mode === -1) { pending = idx; return; }
+  preset = idx; layout(idx); mode = 1; modeStart = now();
+}
+function retract() { if (mode === 1) { pending = -1; mode = -1; modeStart = now(); } }
+document.querySelectorAll('#ui button[data-p]').forEach(b => b.onclick = () => show(+b.dataset.p));
+document.getElementById('back').onclick = retract;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  N = DPR >= 1.5 ? NMAX : NMAX >> 2;
+  W = Math.round(innerWidth * DPR); H = Math.round(innerHeight * DPR);
+  canvas.width = W; canvas.height = H;
+  freeTarget(splat); freeTarget(hA); freeTarget(hB);
+  splat = makeTarget(W, H);
+  hA = makeTarget(Math.ceil(W / 2), Math.ceil(H / 2)); hB = makeTarget(Math.ceil(W / 2), Math.ceil(H / 2));
+  if (mode === -1) mode = 0;
+  layout(mode === 1 ? preset : -1);
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- frame ----------
+const fpsEl = document.getElementById('fps');
+let fpsN = 0, fpsT = now();
+const t0 = now();
+function frame() {
+  const t = now(), time = t - t0;
+  if (mode === -1 && t - modeStart > RETURN_T) {
+    mode = 0; preset = -1; layout(-1);
+    if (pending >= 0) { const p = pending; pending = -1; show(p); }
+  }
+  const uT = t - modeStart;
+  let move = 0;
+  if (mode === 1) move = Math.max(0, 1 - Math.abs(uT - 1.2) / 1.4);
+  if (mode === -1) move = Math.max(0, 1 - Math.abs(uT - 1.1) / 1.3);
+  const sweep = mode === 1 ? -0.4 + (uT - FORM_T + .2) * 1.6 : -9;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, splat.fb); gl.viewport(0, 0, splat.w, splat.h);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(pSplat.p);
+  gl.uniform2f(pSplat.u.uRes, W, H); gl.uniform1f(pSplat.u.uT, uT); gl.uniform1f(pSplat.u.uMode, mode);
+  gl.uniform1f(pSplat.u.uTime, time); gl.uniform1f(pSplat.u.uDpr, DPR);
+  gl.bindVertexArray(vao); gl.drawArrays(gl.POINTS, 0, N); gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+
+  gl.useProgram(pBlur.p); gl.uniform1i(pBlur.u.uTex, 0); gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hA.fb); gl.viewport(0, 0, hA.w, hA.h);
+  gl.bindTexture(gl.TEXTURE_2D, splat.tex); gl.uniform2f(pBlur.u.uDir, 3 * DPR / splat.w, 0); gl.uniform4f(pBlur.u.uMask, 0, 0, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hB.fb);
+  gl.bindTexture(gl.TEXTURE_2D, hA.tex); gl.uniform2f(pBlur.u.uDir, 0, 1.5 * DPR / hA.h); gl.uniform4f(pBlur.u.uMask, 1, 0, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(pComp.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, splat.tex); gl.uniform1i(pComp.u.uD, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hB.tex); gl.uniform1i(pComp.u.uH, 1);
+  gl.uniform2f(pComp.u.uRes, W, H); gl.uniform1f(pComp.u.uTime, time); gl.uniform1f(pComp.u.uSweep, sweep);
+  gl.uniform1f(pComp.u.uMove, move); gl.uniform1f(pComp.u.uDpr, DPR);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+
+  fpsN++;
+  if (t - fpsT > .5) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} FPS · ${N.toLocaleString()} 滴液体 · ${DPR}x`; fpsN = 0; fpsT = t; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+setTimeout(() => { if (preset < 0 && mode === 0) show(0); }, 1800);
+</script>
+</body>
+</html>

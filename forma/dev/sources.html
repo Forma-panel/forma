@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forma 内容来源</title>
+<style>
+html,body{margin:0;height:100%;background:#f6f7f9;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif}
+#stage{position:fixed;inset:0}
+#ui{position:fixed;left:16px;top:16px;right:16px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;user-select:none}
+#ui button,#ui label{background:rgba(0,0,0,.04);color:#2a2f3a;border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+#ui button:hover,#ui label:hover{background:rgba(0,0,0,.08)}
+#ui button[aria-pressed=true]{background:#2a2f3a;color:#fff}
+#file{display:none}
+#log{position:fixed;left:16px;bottom:16px;color:#5d6677;font:12px ui-monospace,Menlo,monospace;z-index:2;white-space:pre}
+#drop{position:fixed;inset:0;z-index:5;display:none;place-items:center;background:rgba(246,247,249,.85);font-size:20px;color:#2a2f3a}
+body.dragging #drop{display:grid}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="ui">
+  <label for="file">选择你的图片…</label><input id="file" type="file" accept="image/*">
+  <button id="sample">示例画布</button>
+  <button data-size="320,200">小卡 320×200</button>
+  <button data-size="540,370">标准 540×370</button>
+  <button data-size="720,300">宽卡 720×300</button>
+  <button data-size="360,480">竖卡 360×480</button>
+  <button id="fit" aria-pressed="false">完整显示图片（contain）</button>
+  <button id="back">收回成液团</button>
+</div>
+<div id="log">也可以把图片直接拖进窗口</div>
+<div id="drop">松开即可让液体凝成这张图片</div>
+<script src="../test/harness.js"></script>
+<script type="module">
+import { createForma } from '../src/index.js';
+
+const logEl = document.getElementById('log');
+const lines = [];
+const log = s => { lines.push(s); logEl.textContent = lines.slice(-4).join('\n'); };
+
+const forma = createForma(document.getElementById('stage'), {
+  clock: () => window.__vt !== undefined ? window.__vt : performance.now() / 1000,
+  onAfterRender: (gl, W, H) => window.__afterDraw && window.__afterDraw(gl, W, H),
+  onAction: e => log(`点击：${e.label || e.action}`),
+});
+forma.on('state', s => log(`状态：${s}`));
+forma.on('warning', e => log(`提示：${e.message}`));
+
+let fit = 'cover', lastImage = null;
+const fitBtn = document.getElementById('fit');
+fitBtn.onclick = () => {
+  fit = fit === 'cover' ? 'contain' : 'cover';
+  fitBtn.setAttribute('aria-pressed', fit === 'contain');
+  if (lastImage) showImage(lastImage);
+};
+
+async function showImage(src) {
+  lastImage = src;
+  try { const r = await forma.show(src, { fit, alt: '你选择的图片' }); log(`结果：${r.status}`); }
+  catch (e) { log(`出错：${e.message}`); }
+}
+
+// 一张用画布画出来的“图片”：示例渐变风景
+const sample = document.createElement('canvas'); sample.width = 1200; sample.height = 800;
+{
+  const c = sample.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 800); g.addColorStop(0, '#0f2027'); g.addColorStop(.5, '#2c5364'); g.addColorStop(1, '#f8b195');
+  c.fillStyle = g; c.fillRect(0, 0, 1200, 800);
+  c.fillStyle = '#fde68a'; c.beginPath(); c.arc(840, 470, 70, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#1b2a33';
+  c.beginPath(); c.moveTo(0, 800); for (let x = 0; x <= 1200; x += 40) c.lineTo(x, 560 + 60 * Math.sin(x * .006) + 25 * Math.sin(x * .021)); c.lineTo(1200, 800); c.fill();
+  c.fillStyle = '#0b1419';
+  c.beginPath(); c.moveTo(0, 800); for (let x = 0; x <= 1200; x += 30) c.lineTo(x, 660 + 40 * Math.sin(x * .01 + 2)); c.lineTo(1200, 800); c.fill();
+}
+document.getElementById('sample').onclick = () => showImage(sample);
+
+// 不同尺寸的卡片（绘制回调 + 可点击按钮）
+const FONT = '-apple-system,"PingFang SC",sans-serif';
+const sized = {};
+function sizedCard(w, h) {
+  const key = `${w}x${h}`;
+  return sized[key] ||= (ctx, cw, ch) => {
+    const g = ctx.createLinearGradient(0, 0, 0, ch); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#eef1f5');
+    ctx.beginPath(); ctx.roundRect(0, 0, cw, ch, 24); ctx.fillStyle = g; ctx.fill();
+    ctx.fillStyle = '#141821'; ctx.font = `600 ${Math.min(40, cw / 9)}px ${FONT}`; ctx.fillText(`${w} × ${h}`, 28, 28 + Math.min(40, cw / 9));
+    ctx.fillStyle = '#5d6677'; ctx.font = `15px ${FONT}`; ctx.fillText('尺寸不同的卡片之间也直接变换', 28, 28 + Math.min(40, cw / 9) + 34);
+    ctx.beginPath(); ctx.roundRect(28, ch - 74, 120, 44, 22); ctx.fillStyle = '#2a2f3a'; ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.font = `600 16px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('点我试试', 88, ch - 46); ctx.textAlign = 'left';
+    ctx.region(28, ch - 74, 120, 44, { action: 'try', label: `${w}×${h} 卡片上的按钮`, radius: 22 });
+  };
+}
+document.querySelectorAll('[data-size]').forEach(b => b.onclick = async () => {
+  const [w, h] = b.dataset.size.split(',').map(Number);
+  lastImage = null;
+  const r = await forma.show(sizedCard(w, h), { width: w, height: h });
+  log(`结果：${r.status}`);
+});
+document.getElementById('back').onclick = async () => log(`结果：${(await forma.retract()).status}`);
+
+document.getElementById('file').onchange = e => { const f = e.target.files[0]; if (f) showImage(URL.createObjectURL(f)); };
+addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+addEventListener('drop', e => {
+  e.preventDefault(); document.body.classList.remove('dragging');
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f) showImage(URL.createObjectURL(f));
+});
+// 测试用：#test=... 里的数字 0–3 是四种尺寸的卡片，4 是示例画布
+const SIZES = [[540, 370], [720, 300], [320, 200], [360, 480]];
+window.__api = { ready: () => forma.renderer.ready, retract: () => forma.retract(),
+  show: i => i < 4 ? forma.show(sizedCard(...SIZES[i]), { width: SIZES[i][0], height: SIZES[i][1] }) : forma.show(sample) };
+if (!location.hash.startsWith('#test')) setTimeout(() => { if (forma.state === 'blob') showImage(sample); }, 1500);
+</script>
+</body>
+</html>

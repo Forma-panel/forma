@@ -1,0 +1,17 @@
+{
+  "file": "Space-pi-coast-1790987211438.png",
+  "sourceSize": [
+    1440,
+    900
+  ],
+  "canvasSize": [
+    1868,
+    1116
+  ],
+  "checkedPixels": 10624,
+  "maxChannelError": 0,
+  "meanChannelError": 0,
+  "pass": true,
+  "displayPath": "WebGL2 gl.POINTS",
+  "visibleImageElements": 0
+}

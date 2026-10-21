@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forma:host-transaction:0.3",
+  "title": "Forma HostTransaction 0.3 — host-only",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "const": "panel-scene/0.3"
+    },
+    "transactionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "branchId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "requestId": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "baseRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "origin": {
+      "enum": [
+        "agent",
+        "local",
+        "undo"
+      ]
+    },
+    "draft": {
+      "oneOf": [
+        {
+          "$ref": "urn:forma:scene-draft:0.3"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "answerId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "mode": {
+      "enum": [
+        "append",
+        "replace",
+        "remove",
+        "insert"
+      ]
+    },
+    "beforeAnswerId": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "protocol",
+    "transactionId",
+    "branchId",
+    "requestId",
+    "baseRevision",
+    "nextRevision",
+    "origin",
+    "draft",
+    "answerId",
+    "mode"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "remove"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "draft": {
+            "type": "null"
+          },
+          "origin": {
+            "enum": [
+              "local",
+              "undo"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "draft": {
+            "$ref": "urn:forma:scene-draft:0.3"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "origin": {
+            "const": "agent"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "requestId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "insert"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "beforeAnswerId"
+        ],
+        "properties": {
+          "origin": {
+            "const": "undo"
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "beforeAnswerId"
+          ]
+        }
+      }
+    }
+  ]
+}

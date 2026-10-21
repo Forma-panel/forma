@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forma 开发页</title>
+<style>
+html,body{margin:0;height:100%;background:#f6f7f9;overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif}
+#stage{position:fixed;inset:0}
+#ui{position:fixed;left:16px;top:16px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;user-select:none}
+#ui button{background:rgba(0,0,0,.04);color:#2a2f3a;border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+#ui button:hover{background:rgba(0,0,0,.08)}
+#fps{position:fixed;right:16px;top:16px;color:#8a93a3;font:12px ui-monospace,Menlo,monospace;z-index:2;user-select:none}
+#err{position:fixed;inset:auto 16px 16px 16px;color:#d33;font:13px ui-monospace,Menlo,monospace;white-space:pre-wrap;z-index:3}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="ui">
+  <button data-p="0">天气卡片</button>
+  <button data-p="1">数据面板</button>
+  <button data-p="2">文章</button>
+  <button data-p="3">音乐</button>
+  <button data-p="4">行情</button>
+  <button data-p="5">海报</button>
+  <button id="back">收回成液团</button>
+  <button id="demo">▶ 20 秒演示</button>
+</div>
+<div id="fps"></div>
+<div id="err"></div>
+<script src="../test/harness.js"></script>
+<script type="module">
+import { createForma } from '../src/index.js';
+import { CONTENTS } from './contents.js';
+
+const fpsEl = document.getElementById('fps');
+let forma;
+try {
+  forma = createForma(document.getElementById('stage'), {
+    clock: () => window.__vt !== undefined ? window.__vt : performance.now() / 1000,
+    onAfterRender: (gl, W, H) => window.__afterDraw && window.__afterDraw(gl, W, H),
+  });
+} catch (e) { document.getElementById('err').textContent = e.message; throw e; }
+CONTENTS.forEach(c => forma.preload(c));
+window.__api = { ready: () => forma.renderer.ready, show: i => forma.show(CONTENTS[i]), retract: () => forma.retract() };
+
+document.querySelectorAll('#ui button[data-p]').forEach(b => b.onclick = () => forma.show(CONTENTS[+b.dataset.p]));
+document.getElementById('back').onclick = () => forma.retract();
+
+let demoLabel = '';
+setInterval(() => { const s = forma.stats; fpsEl.textContent = `${demoLabel}${s.fps} FPS · ${s.drops.toLocaleString()} 滴液体 · ${s.dpr}x`; }, 500);
+
+// ---------- 20 秒连续演示 ----------
+let demoTimers = [];
+function runDemo() {
+  demoTimers.forEach(clearTimeout); demoTimers = [];
+  const t0 = performance.now() / 1000;
+  const steps = [[0, () => forma.retract()], [1.4, () => forma.show(CONTENTS[0])], [4.4, () => forma.show(CONTENTS[1])], [7.2, () => forma.show(CONTENTS[3])],
+                 [10, () => forma.show(CONTENTS[4])], [12.8, () => forma.show(CONTENTS[2])], [15.6, () => forma.show(CONTENTS[5])], [18.5, () => forma.retract()]];
+  for (const [at, fn] of steps) demoTimers.push(setTimeout(fn, at * 1000));
+  const tick = () => {
+    const e = performance.now() / 1000 - t0;
+    if (e < 20.2) { demoLabel = `演示 ${Math.min(20, Math.floor(e))} / 20 秒 · `; demoTimers.push(setTimeout(tick, 250)); }
+    else demoLabel = '';
+  };
+  tick();
+}
+document.getElementById('demo').onclick = runDemo;
+if (location.hash === '#demo') setTimeout(runDemo, 300);
+else if (!location.hash.startsWith('#test')) setTimeout(() => { if (forma.state === 'blob' && !forma.preset) forma.show(CONTENTS[0]); }, 1800);
+</script>
+</body>
+</html>
