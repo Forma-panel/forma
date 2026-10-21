@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .venv/
 releases/
+artifacts/syntax-check.txt
+artifacts/unit-tests.txt
+artifacts/material-tests.tap
+artifacts/material-check.txt

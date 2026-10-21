@@ -94,3 +94,7 @@ npm run check
 | [specs/README.md](specs/README.md) | 设计阶段 Schema 与参考检查器 |
 
 [在线项目设计](https://chatgpt.com/space/page_5ad8af096c348191a4f3cdc047da780b)是设计资料，实际 1.0 交付状态以本仓库 README 和 V1.md 为准。[旧 DOM/SVG 交接方案](archive/DESIGN-v1-transition.md)仅留档，不代表本版实现。
+
+## 许可
+
+代码使用 [MIT 许可证](LICENSE)。随包的 Noto Sans SC 字体单独使用 SIL Open Font License，见 [app/assets/fonts/OFL.txt](app/assets/fonts/OFL.txt)，不随代码改成 MIT。

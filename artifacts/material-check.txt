@@ -1,4 +1,0 @@
-
-> forma-particle-panel@1.0.0 check
-> node --check app/compiler.js && node --check app/main.js && node --check app/scenes.js && node --check app/motion.js && node --check app/material-state.js && node --check app/material-plan.js && node --check app/particle-renderer.js && node --check app/liquid-shaders.js && node --check app/qa/liquid.js && node --check app/qa/verify.js && node --check server.mjs
-
